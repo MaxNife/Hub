@@ -1,0 +1,11 @@
+{
+  "manifestVersion": 1,
+  "id": "converter",
+  "name": "Converter",
+  "description": "Units and currencies",
+  "category": "Tools",
+  "tags": ["units", "currency", "measure"],
+  "icon": "icon.svg",
+  "type": "static",
+  "entry": "dist"
+}

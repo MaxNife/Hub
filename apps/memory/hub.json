@@ -1,0 +1,11 @@
+{
+  "manifestVersion": 1,
+  "id": "memory",
+  "name": "Memory",
+  "description": "Match the pairs",
+  "category": "Games",
+  "tags": ["puzzle", "cards"],
+  "icon": "icon.svg",
+  "type": "static",
+  "entry": "dist"
+}

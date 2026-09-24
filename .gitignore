@@ -1,0 +1,16 @@
+# build output
+hub.exe
+hub
+data/hub.db*
+data/*.log
+web/dist/
+web/node_modules/
+
+# local Go toolchain (downloaded, not committed)
+.tools/
+
+# Go
+__debug_bin*
+
+# Windows
+Thumbs.db

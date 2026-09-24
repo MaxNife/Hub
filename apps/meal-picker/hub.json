@@ -1,0 +1,11 @@
+{
+  "manifestVersion": 1,
+  "id": "meal-picker",
+  "name": "Meal picker",
+  "description": "Tonight's dinner, decided",
+  "category": "Tools",
+  "tags": ["food", "dinner", "random"],
+  "icon": "icon.svg",
+  "type": "static",
+  "entry": "dist"
+}

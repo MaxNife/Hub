@@ -1,0 +1,152 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Memory</title>
+<style>
+  * { box-sizing: border-box; }
+  html, body { height: 100%; }
+  body { margin: 0; font-family: 'Figtree', system-ui, sans-serif; background: #17151f; color: #f4f2fa; height: 100dvh; overflow: hidden; padding: 14px 16px; }
+  .wrap { max-width: 480px; height: 100%; margin: 0 auto; display: flex; flex-direction: column; min-height: 0; }
+  .top { display: flex; align-items: center; gap: 10px; }
+  h1 { font-family: 'Bricolage Grotesque', system-ui, sans-serif; font-size: 24px; margin: 0; letter-spacing: -0.5px; flex-grow: 1; }
+  button.restart { border: 1px solid rgba(255,255,255,0.2); background: rgba(255,255,255,0.08); color: #f4f2fa; border-radius: 999px; padding: 7px 16px; font: inherit; font-size: 13px; font-weight: 600; cursor: pointer; }
+  .stats { display: flex; gap: 8px; margin: 10px 0; }
+  .stat { flex: 1; background: rgba(255,255,255,0.08); border: 1px solid rgba(255,255,255,0.12); border-radius: 12px; padding: 6px 4px; text-align: center; }
+  .stat b { display: block; font-size: 17px; font-variant-numeric: tabular-nums; }
+  .stat small { font-size: 11px; color: #8f8aa3; }
+  .boardwrap { position: relative; flex: 1; min-height: 0; display: flex; }
+  .grid { flex: 1; min-height: 0; display: grid; grid-template-columns: repeat(4, 1fr); grid-template-rows: repeat(4, 1fr); gap: 8px; }
+  .card { min-height: 0; border: none; border-radius: 12px; font-size: clamp(20px, 6vmin, 36px); cursor: pointer; background: #2a2740; color: transparent; transition: transform 0.15s, background 0.2s; }
+  .card:hover:not(:disabled) { transform: scale(1.04); }
+  .card.open, .card.done { background: #fff; color: initial; }
+  .card.done { background: #2fc08f; cursor: default; }
+  .card:disabled { cursor: default; }
+  .win { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px; text-align: center; background: rgba(23,21,31,0.92); border-radius: 18px; padding: 24px; }
+  .win h2 { margin: 0; font-family: 'Bricolage Grotesque', system-ui, sans-serif; font-size: 28px; }
+  .win p { margin: 0 0 8px; color: #c9c5d6; }
+  button.primary { border: none; border-radius: 999px; padding: 12px 28px; font: inherit; font-weight: 600; font-size: 15px; background: #8b6cff; color: #fff; cursor: pointer; }
+  [hidden] { display: none !important; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="top">
+    <h1>Memory</h1>
+    <button class="restart" id="restart" type="button">Restart</button>
+  </div>
+  <div class="stats">
+    <div class="stat"><b id="moves">0</b><small>Moves</small></div>
+    <div class="stat"><b id="time">0:00</b><small>Time</small></div>
+    <div class="stat"><b id="best">–</b><small>Best time</small></div>
+  </div>
+  <div class="boardwrap">
+    <div class="grid" id="grid"></div>
+    <div class="win" id="win" hidden>
+      <h2>Cleared!</h2>
+      <p id="winline"></p>
+      <button class="primary" id="again" type="button">Play again</button>
+    </div>
+  </div>
+</div>
+<script>
+(function () {
+  'use strict';
+  var FACES = ['🚀', '🌙', '⚡', '🌊', '🔥', '🍀', '🎧', '🍎'];
+  var BEST_KEY = 'memory:best';
+  var grid = document.getElementById('grid');
+  var movesEl = document.getElementById('moves');
+  var timeEl = document.getElementById('time');
+  var bestEl = document.getElementById('best');
+  var winBox = document.getElementById('win');
+  var winline = document.getElementById('winline');
+  var deck = [], first = null, lock = false, moves = 0, matched = 0, secs = 0, timer = null, started = false;
+
+  function best() {
+    try {
+      var v = parseInt(localStorage.getItem(BEST_KEY) || '', 10);
+      return isFinite(v) ? v : null;
+    } catch (e) { return null; }
+  }
+  function fmt(s) { return Math.floor(s / 60) + ':' + String(s % 60).padStart(2, '0'); }
+  function paintBest() {
+    var b = best();
+    bestEl.textContent = b === null ? '–' : fmt(b);
+  }
+  function tick() {
+    secs++;
+    timeEl.textContent = fmt(secs);
+  }
+  function shuffle(a) {
+    for (var i = a.length - 1; i > 0; i--) {
+      var j = Math.floor(Math.random() * (i + 1));
+      var t = a[i]; a[i] = a[j]; a[j] = t;
+    }
+    return a;
+  }
+  function deal() {
+    deck = shuffle(FACES.concat(FACES));
+    grid.innerHTML = '';
+    deck.forEach(function (face, i) {
+      var b = document.createElement('button');
+      b.type = 'button';
+      b.className = 'card';
+      b.dataset.face = face;
+      b.dataset.i = i;
+      b.setAttribute('aria-label', 'card ' + (i + 1));
+      b.addEventListener('click', function () { flip(b); });
+      grid.appendChild(b);
+    });
+    first = null; lock = false; moves = 0; matched = 0; secs = 0; started = false;
+    if (timer) { clearInterval(timer); timer = null; }
+    movesEl.textContent = '0';
+    timeEl.textContent = '0:00';
+    winBox.hidden = true;
+    paintBest();
+  }
+  function flip(card) {
+    if (lock || card.classList.contains('open') || card.classList.contains('done')) return;
+    if (!started) { started = true; timer = setInterval(tick, 1000); }
+    card.classList.add('open');
+    card.textContent = card.dataset.face;
+    if (!first) { first = card; return; }
+    moves++;
+    movesEl.textContent = String(moves);
+    if (first.dataset.face === card.dataset.face) {
+      first.classList.add('done');
+      card.classList.add('done');
+      first.disabled = true;
+      card.disabled = true;
+      first = null;
+      matched += 2;
+      if (matched === deck.length) finish();
+    } else {
+      lock = true;
+      var a = first, b = card;
+      first = null;
+      setTimeout(function () {
+        a.classList.remove('open'); a.textContent = '';
+        b.classList.remove('open'); b.textContent = '';
+        lock = false;
+      }, 650);
+    }
+  }
+  function finish() {
+    if (timer) { clearInterval(timer); timer = null; }
+    var b = best();
+    var isBest = b === null || secs < b;
+    if (isBest) {
+      try { localStorage.setItem(BEST_KEY, String(secs)); } catch (e) {}
+      paintBest();
+    }
+    winline.textContent = fmt(secs) + ' · ' + moves + ' moves' + (isBest ? ' · new best!' : '');
+    winBox.hidden = false;
+  }
+  document.getElementById('restart').addEventListener('click', deal);
+  document.getElementById('again').addEventListener('click', deal);
+  deal();
+})();
+</script>
+</body>
+</html>

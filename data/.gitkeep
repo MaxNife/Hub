@@ -1,0 +1,3 @@
+< including apps in git; user data stays out >
+
+!apps/**/.gitkeep
