@@ -27,9 +27,25 @@ export const APPS: HubApp[] = [
   { id: 'names', name: 'Name generator', description: 'Project names on demand', category: 'Tools', type: 'static', icon: 'names' },
 ];
 
-export const CATEGORIES = [
-  { name: 'Games', color: '#8b6cff', count: 3 },
-  { name: 'Tools', color: '#ff9a3d', count: 4 },
-  { name: 'Info', color: '#2fc08f', count: 1 },
-  { name: 'Media', color: '#33b6f0', count: 1 },
-];
+// Single source for category hues (sidebar dots, category cards, brand mark).
+const CATEGORY_COLORS: Record<string, string> = {
+  Games: '#8b6cff',
+  Tools: '#ff9a3d',
+  Info: '#2fc08f',
+  Media: '#33b6f0',
+};
+const EXTRA_COLORS = ['#ff5c7a', '#43ddb9', '#ffc43d', '#6c8cff'];
+
+export function categoryColor(name: string, index = 0): string {
+  return CATEGORY_COLORS[name] ?? EXTRA_COLORS[index % EXTRA_COLORS.length];
+}
+
+export const CATEGORIES = ['Games', 'Tools', 'Info', 'Media'].map((name) => ({
+  name,
+  color: categoryColor(name),
+  count: APPS.filter((a) => a.category === name).length,
+}));
+
+export function plural(n: number, word: string): string {
+  return `${n} ${word}${n === 1 ? '' : 's'}`;
+}

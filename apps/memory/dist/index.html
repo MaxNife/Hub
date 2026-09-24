@@ -27,6 +27,21 @@
   .win h2 { margin: 0; font-family: 'Bricolage Grotesque', system-ui, sans-serif; font-size: 28px; }
   .win p { margin: 0 0 8px; color: #c9c5d6; }
   button.primary { border: none; border-radius: 999px; padding: 12px 28px; font: inherit; font-weight: 600; font-size: 15px; background: #8b6cff; color: #fff; cursor: pointer; }
+  .card.done { animation: matched 0.45s cubic-bezier(0.34, 1.56, 0.64, 1); }
+  @keyframes matched { 40% { transform: scale(1.1); } }
+  .win:not([hidden]) { animation: win-fade 0.3s ease both; }
+  .win:not([hidden]) > * { animation: win-pop 0.5s cubic-bezier(0.34, 1.56, 0.64, 1) both; }
+  .win:not([hidden]) > :nth-child(2) { animation-delay: 0.08s; }
+  .win:not([hidden]) > :nth-child(3) { animation-delay: 0.16s; }
+  @keyframes win-fade { from { opacity: 0; } }
+  @keyframes win-pop { from { opacity: 0; transform: translateY(10px) scale(0.9); } }
+  .confetti { position: fixed; inset: 0; pointer-events: none; overflow: hidden; z-index: 10; }
+  .confetti i { position: absolute; top: -12px; width: 8px; height: 12px; border-radius: 2px; animation: fall var(--d) cubic-bezier(0.25, 0.6, 0.4, 1) var(--delay) forwards; }
+  @keyframes fall { to { transform: translate(var(--x), 105vh) rotate(var(--r)); opacity: 0.9; } }
+  @media (prefers-reduced-motion: reduce) {
+    .card.done, .win:not([hidden]), .win:not([hidden]) > * { animation: none; }
+    .confetti { display: none; }
+  }
   [hidden] { display: none !important; }
 </style>
 </head>
@@ -142,6 +157,26 @@
     }
     winline.textContent = fmt(secs) + ' · ' + moves + ' moves' + (isBest ? ' · new best!' : '');
     winBox.hidden = false;
+    celebrate(isBest ? 90 : 45);
+  }
+  // A burst of confetti in Hub's brand colours; more for a new best.
+  function celebrate(n) {
+    var colors = ['#8b6cff', '#ff9a3d', '#2fc08f', '#ff5c7a', '#ffd34d', '#33b6f0'];
+    var box = document.createElement('div');
+    box.className = 'confetti';
+    for (var i = 0; i < n; i++) {
+      var c = document.createElement('i');
+      c.style.left = Math.random() * 100 + '%';
+      c.style.background = colors[i % colors.length];
+      c.style.setProperty('--x', (Math.random() * 160 - 80) + 'px');
+      c.style.setProperty('--r', (Math.random() * 900 - 450) + 'deg');
+      c.style.setProperty('--d', (1.6 + Math.random() * 1.4) + 's');
+      c.style.setProperty('--delay', (Math.random() * 0.35) + 's');
+      if (i % 3 === 0) { c.style.width = '6px'; c.style.height = '6px'; c.style.borderRadius = '50%'; }
+      box.appendChild(c);
+    }
+    document.body.appendChild(box);
+    setTimeout(function () { box.remove(); }, 3400);
   }
   document.getElementById('restart').addEventListener('click', deal);
   document.getElementById('again').addEventListener('click', deal);

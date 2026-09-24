@@ -1,173 +1,218 @@
-import { useEffect, useState, type ReactNode } from 'react';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { useShell } from '../shell-context';
-import { APPS } from '../data';
-import { AppIcon } from '../components/AppIcon';
-import { get, iconSrc, useLiveApps, useRegistryErrors, type RecentEntry } from '../live';
+import { categoryColor, plural } from '../data';
+import { useTheme, type ThemePref } from '../theme';
+import { AppGlyph, AppTile, DemoBanner, EmptyState, PageHeader, SkeletonGrid } from '../components/ui';
+import {
+  IconAlert, IconArrowLeft, IconCheck, IconClock, IconEyeOff, IconGrid, IconHome, IconMenu, IconMonitor,
+  IconMoon, IconPlus, IconPopOut, IconRefresh, IconSearch, IconStar, IconStarFilled, IconSun,
+} from '../components/Icons';
+import {
+  get, markOpened, useApps, useLiveApps, useRegistryErrors, type LiveApp, type RecentEntry, type TileApp,
+} from '../live';
 
+// Pin / install changes apply instantly and roll back if the server says no.
 function useAppMutations() {
   const qc = useQueryClient();
-  const refresh = () => {
-    qc.invalidateQueries({ queryKey: ['apps'] });
-    qc.invalidateQueries({ queryKey: ['categories'] });
-    qc.invalidateQueries({ queryKey: ['recent'] });
+  const { toast } = useShell();
+  const patch = (id: string, change: Partial<LiveApp>) =>
+    qc.setQueryData<LiveApp[]>(['apps'], (old) => old?.map((a) => (a.id === id ? { ...a, ...change } : a)));
+  const send = (url: string, on: boolean, id: string, change: Partial<LiveApp>, undo: Partial<LiveApp>) => {
+    patch(id, change);
+    return fetch(url, { method: on ? 'POST' : 'DELETE' })
+      .then((r) => {
+        if (!r.ok) throw new Error();
+      })
+      .catch(() => {
+        patch(id, undo);
+        toast('That didn\'t save — is the Hub server running?');
+      })
+      .finally(() => {
+        qc.invalidateQueries({ queryKey: ['categories'] });
+        qc.invalidateQueries({ queryKey: ['recent'] });
+      });
   };
-  return {
-    setInstalled: (id: string, on: boolean) =>
-      fetch(`/api/apps/${id}/install`, { method: on ? 'POST' : 'DELETE' })
-        .then(refresh).catch(() => {}),
-    setPinned: (id: string, on: boolean) =>
-      fetch(`/api/apps/${id}/pin`, { method: on ? 'POST' : 'DELETE' })
-        .then(refresh).catch(() => {}),
+  const setInstalled = (app: TileApp, on: boolean) => {
+    send(`/api/apps/${app.id}/install`, on, app.id, { installed: on }, { installed: !on });
+    if (on) toast(`${app.name} installed`);
+    else toast(`${app.name} hidden`, { label: 'Undo', run: () => setInstalled(app, true) });
+  };
+  const setPinned = (app: TileApp, on: boolean) => {
+    send(`/api/apps/${app.id}/pin`, on, app.id, { pinned: on }, { pinned: !on });
+  };
+  return { setInstalled, setPinned };
+}
+
+function useDemoGuard() {
+  const { toast } = useShell();
+  return (status: string, fn: () => void) => () => {
+    if (status === 'live') fn();
+    else toast('Demo data — start the Hub server to change apps');
   };
 }
 
-export function Category() {
-  const { name } = useParams();
-  const nav = useNavigate();
-  const { data: live } = useLiveApps();
-  const backendUp = live !== undefined;
-  const liveApps = (live ?? []).filter(
-    (a) => a.installed && a.category.toLowerCase() === (name ?? '').toLowerCase(),
+function PinButton({ app, onClick }: { app: TileApp; onClick: () => void }) {
+  return (
+    <button
+      type="button"
+      className={`chip-btn pin${app.pinned ? ' on' : ''}`}
+      onClick={onClick}
+      aria-pressed={app.pinned}
+    >
+      {app.pinned ? <IconStarFilled size={14} /> : <IconStar size={14} />}
+      {app.pinned ? 'Pinned' : 'Pin'}
+    </button>
   );
-  const mockApps = APPS.filter((a) => a.category?.toLowerCase() === (name ?? '').toLowerCase());
-  const open = (id: string) => {
-    fetch(`/api/apps/${id}/opened`, { method: 'POST' }).catch(() => {});
-    nav(`/open/${id}`);
-  };
+}
+
+export function Category() {
+  const { name = '' } = useParams();
+  const { apps, status } = useApps();
+  const inCat = apps.filter((a) => a.installed && a.category.toLowerCase() === name.toLowerCase());
   return (
     <>
-      <div className="section-head">
-        <h1 className="hero-title" style={{ fontSize: 34 }}>{name}</h1>
-        <div className="spacer" />
-        <Link to="/">← Home</Link>
-      </div>
-      {backendUp ? (
-        liveApps.length > 0 ? (
-          <div className="recent-grid">
-            {liveApps.map((a) => (
-              <button key={a.id} className="rcard" onClick={() => open(a.id)}>
-                <img className="ricon" src={iconSrc(a)} alt="" />
-                <span className="name">{a.name}</span>
-                <span className="sub">{a.description}</span>
-              </button>
-            ))}
-          </div>
-        ) : (
-          <p style={{ color: '#6a6574' }}>No installed apps in {name} yet — add one in <Link to="/apps">All apps</Link>.</p>
-        )
-      ) : (
+      <PageHeader
+        title={name}
+        eyebrow={<Link to="/" className="crumb"><IconArrowLeft size={14} />Home</Link>}
+      >
+        <span className="cat-chip" style={{ background: categoryColor(name) }} />
+        <span className="muted-text">{plural(inCat.length, 'app')}</span>
+      </PageHeader>
+      {status === 'demo' && <DemoBanner />}
+      {status === 'loading' ? (
+        <SkeletonGrid count={4} />
+      ) : inCat.length > 0 ? (
         <div className="recent-grid">
-          {mockApps.map((a) => (
-            <button key={a.id} className="rcard" onClick={() => open(a.id)}>
-              <AppIcon kind={a.icon} />
-              <span className="name">{a.name}</span>
-              <span className="sub">{a.description}</span>
-            </button>
-          ))}
-          {mockApps.length === 0 && <p style={{ color: '#6a6574' }}>No installed apps in this category yet.</p>}
+          {inCat.map((a, i) => <AppTile key={a.id} app={a} index={i} sub={a.description} />)}
         </div>
+      ) : (
+        <EmptyState
+          icon={<IconGrid size={28} />}
+          title={`Nothing in ${name} yet`}
+          body="Apps you install in this category will show up here."
+          action={<Link to="/apps" className="btn btn-primary">Browse all apps</Link>}
+        />
       )}
     </>
   );
 }
 
 export function AllApps() {
-  const nav = useNavigate();
-  const { data: live } = useLiveApps();
+  const { apps, status } = useApps();
   const { setInstalled, setPinned } = useAppMutations();
-  const open = (id: string) => {
-    fetch(`/api/apps/${id}/opened`, { method: 'POST' }).catch(() => {});
-    nav(`/open/${id}`);
-  };
-  if (live && live.length > 0) {
-    const installed = live.filter((a) => a.installed);
-    const notInstalled = live.filter((a) => !a.installed);
-    return (
-      <>
-        <div className="section-head"><h1 className="hero-title" style={{ fontSize: 34 }}>All apps</h1></div>
-        <div className="recent-grid">
-          {installed.map((a) => (
-            <div key={a.id} className="rcard">
-              <button type="button" className="tile" onClick={() => open(a.id)}>
-                <img className="ricon" src={iconSrc(a)} alt="" />
-                <span className="name">{a.name}</span>
-                <span className="sub">{a.category}</span>
-              </button>
-              <div className="card-actions">
-                <button className={`chip-btn${a.pinned ? ' on' : ''}`} onClick={() => setPinned(a.id, !a.pinned)}>
-                  {a.pinned ? '★ Pinned' : '☆ Pin'}
-                </button>
-                <button className="chip-btn" onClick={() => setInstalled(a.id, false)}>Hide</button>
-              </div>
-            </div>
-          ))}
-        </div>
-        {notInstalled.length > 0 && (
-          <>
-            <h2 className="section-title" style={{ marginTop: 24 }}>Not installed</h2>
-            <div className="recent-grid">
-              {notInstalled.map((a) => (
-                <div key={a.id} className="rcard">
-                  <img className="ricon" src={iconSrc(a)} alt="" />
-                  <span className="name">{a.name}</span>
-                  <div className="card-actions">
-                    <button className="chip-btn on" onClick={() => setInstalled(a.id, true)}>Install</button>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </>
-        )}
-      </>
-    );
-  }
+  const guard = useDemoGuard();
+  const [filter, setFilter] = useState('All');
+  const cats = ['All', ...Array.from(new Set(apps.map((a) => a.category)))];
+  const shown = apps.filter((a) => filter === 'All' || a.category === filter);
+  const installed = shown.filter((a) => a.installed);
+  const notInstalled = shown.filter((a) => !a.installed);
+
   return (
     <>
-      <div className="section-head"><h1 className="hero-title" style={{ fontSize: 34 }}>All apps</h1></div>
-      <div className="recent-grid">
-        {APPS.map((a) => (
-          <button key={a.id} className="rcard" onClick={() => open(a.id)}>
-            <AppIcon kind={a.icon} />
-            <span className="name">{a.name}</span>
-            <span className="sub">{a.category}</span>
+      <PageHeader title="All apps" eyebrow={status === 'loading' ? 'Loading…' : `${plural(apps.filter((a) => a.installed).length, 'app')} installed`} />
+      {status === 'demo' && <DemoBanner />}
+      <div className="filter-row" role="tablist" aria-label="Filter by category">
+        {cats.map((c) => (
+          <button
+            key={c}
+            type="button"
+            role="tab"
+            aria-selected={filter === c}
+            className={`filter-chip${filter === c ? ' on' : ''}`}
+            onClick={() => setFilter(c)}
+          >
+            {c !== 'All' && <span className="dot" style={{ background: categoryColor(c) }} />}
+            {c}
           </button>
         ))}
       </div>
+      {status === 'loading' ? (
+        <SkeletonGrid />
+      ) : (
+        <>
+          {installed.length > 0 ? (
+            <div className="recent-grid">
+              {installed.map((a, i) => (
+                <AppTile
+                  key={a.id}
+                  app={a}
+                  index={i}
+                  sub={a.category}
+                  actions={
+                    <>
+                      <PinButton app={a} onClick={guard(status, () => setPinned(a, !a.pinned))} />
+                      <button type="button" className="chip-btn" onClick={guard(status, () => setInstalled(a, false))} title={`Hide ${a.name}`}>
+                        <IconEyeOff size={14} />Hide
+                      </button>
+                    </>
+                  }
+                />
+              ))}
+            </div>
+          ) : (
+            <EmptyState
+              icon={<IconGrid size={28} />}
+              title="No installed apps here"
+              body={filter === 'All' ? 'Install one below, or drop a folder into apps/ and rescan.' : `Nothing from ${filter} is installed.`}
+            />
+          )}
+          {notInstalled.length > 0 && (
+            <section className="section">
+              <h2 className="section-title">Not installed</h2>
+              <div className="recent-grid">
+                {notInstalled.map((a, i) => (
+                  <AppTile
+                    key={a.id}
+                    app={a}
+                    index={i}
+                    sub={a.description}
+                    disabled
+                    actions={
+                      <button type="button" className="chip-btn on" onClick={guard(status, () => setInstalled(a, true))}>
+                        <IconPlus size={14} />Install
+                      </button>
+                    }
+                  />
+                ))}
+              </div>
+            </section>
+          )}
+        </>
+      )}
     </>
   );
 }
 
 export function Favorites() {
-  const nav = useNavigate();
-  const { data: live } = useLiveApps();
+  const { apps, status } = useApps();
   const { setPinned } = useAppMutations();
-  const open = (id: string) => {
-    fetch(`/api/apps/${id}/opened`, { method: 'POST' }).catch(() => {});
-    nav(`/open/${id}`);
-  };
-  const pinned = (live ?? []).filter((a) => a.installed && a.pinned);
+  const guard = useDemoGuard();
+  const pinned = apps.filter((a) => a.installed && a.pinned);
   return (
     <>
-      <div className="section-head"><h1 className="hero-title" style={{ fontSize: 34 }}>Favorites</h1></div>
-      {!live ? (
-        <p style={{ color: '#6a6574' }}>Start the Hub server to sync favorites.</p>
+      <PageHeader title="Favorites" eyebrow="Pinned apps, one tap away" />
+      {status === 'demo' && <DemoBanner />}
+      {status === 'loading' ? (
+        <SkeletonGrid count={3} />
       ) : pinned.length === 0 ? (
-        <p style={{ color: '#6a6574' }}>Nothing pinned yet — tap ☆ Pin on any app in All apps.</p>
+        <EmptyState
+          icon={<IconStar size={28} />}
+          title="Nothing pinned yet"
+          body="Pin the apps you reach for most and they'll live here."
+          action={<Link to="/apps" className="btn btn-primary">Pick favorites</Link>}
+        />
       ) : (
         <div className="recent-grid">
-          {pinned.map((a) => (
-            <div key={a.id} className="rcard">
-              <button type="button" className="tile" onClick={() => open(a.id)}>
-                <img className="ricon" src={iconSrc(a)} alt="" />
-                <span className="name">{a.name}</span>
-                <span className="sub">{a.category}</span>
-              </button>
-              <div className="card-actions">
-                <button className="chip-btn on" onClick={() => setPinned(a.id, false)}>★ Pinned</button>
-              </div>
-            </div>
+          {pinned.map((a, i) => (
+            <AppTile
+              key={a.id}
+              app={a}
+              index={i}
+              sub={a.category}
+              actions={<PinButton app={a} onClick={guard(status, () => setPinned(a, false))} />}
+            />
           ))}
         </div>
       )}
@@ -176,59 +221,56 @@ export function Favorites() {
 }
 
 export function RecentPage() {
-  const nav = useNavigate();
-  const { data } = useQuery({
+  const { apps, status } = useApps();
+  const { data, isPending } = useQuery({
     queryKey: ['recent'],
     queryFn: () => get<RecentEntry[]>('/api/recent?limit=12'),
     retry: 1,
   });
-  const open = (id: string) => {
-    fetch(`/api/apps/${id}/opened`, { method: 'POST' }).catch(() => {});
-    nav(`/open/${id}`);
-  };
+  const fmt = (iso: string) =>
+    new Date(iso).toLocaleString('en-GB', { weekday: 'short', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
+  const demo = apps.filter((a) => a.demoLastOpened);
   return (
     <>
-      <div className="section-head"><h1 className="hero-title" style={{ fontSize: 34 }}>Recently used</h1></div>
-      {!data ? (
-        <p style={{ color: '#6a6574' }}>Open some apps and they'll show up here.</p>
-      ) : data.length === 0 ? (
-        <p style={{ color: '#6a6574' }}>Nothing yet — open an app to start the history.</p>
-      ) : (
+      <PageHeader title="Recently used" eyebrow="Your last dozen launches" />
+      {status === 'demo' && <DemoBanner />}
+      {isPending ? (
+        <SkeletonGrid />
+      ) : data && data.length > 0 ? (
         <div className="recent-grid">
-          {data.map((a) => (
-            <button key={a.id} className="rcard" onClick={() => open(a.id)}>
-              <img className="ricon" src={iconSrc(a)} alt="" />
-              <span className="name">{a.name}</span>
-              <span className="sub">{new Date(a.openedAt).toLocaleString()}</span>
-            </button>
-          ))}
+          {data.map((r, i) => {
+            const app = apps.find((a) => a.id === r.id);
+            return app ? <AppTile key={r.id} app={app} index={i} sub={fmt(r.openedAt)} /> : null;
+          })}
         </div>
+      ) : status === 'demo' && demo.length > 0 ? (
+        <div className="recent-grid">
+          {demo.map((a, i) => <AppTile key={a.id} app={a} index={i} sub={a.demoLastOpened} />)}
+        </div>
+      ) : (
+        <EmptyState
+          icon={<IconClock size={28} />}
+          title="No history yet"
+          body="Open an app and it'll show up here."
+          action={<Link to="/" className="btn btn-primary">Go home</Link>}
+        />
       )}
     </>
   );
 }
 
-export function SimplePage({ title, body }: { title: string; body: string }) {
-  return (
-    <>
-      <h1 className="hero-title" style={{ fontSize: 34 }}>{title}</h1>
-      <p style={{ color: '#6a6574' }}>{body}</p>
-    </>
-  );
-}
-
 export function OpenApp() {
-  const { id } = useParams();
+  const { id = '' } = useParams();
   const nav = useNavigate();
-  const { data: live } = useLiveApps();
-  const { openMenu } = useShell();
-  const mock = APPS.find((a) => a.id === id);
-  const liveApp = (live ?? []).find((a) => a.id === id);
-  const known = liveApp?.installed || mock?.id === id;
-  const name = liveApp?.name ?? mock?.name ?? id ?? 'App';
+  const { apps, status } = useApps();
+  const { refetch, isFetching } = useLiveApps();
+  const { openMenu, openSearch } = useShell();
+  const app = apps.find((a) => a.id === id);
+  const known = !!app?.installed;
+  const name = app?.name ?? id;
 
   // Launch sequence: the splash stays until the iframe reports loaded AND a
-  // minimum beat has passed, then fades. Opening also records the visit so
+  // short beat has passed, then fades. Opening also records the visit so
   // Recently used stays accurate on direct navigation.
   const [minDone, setMinDone] = useState(false);
   const [frameDone, setFrameDone] = useState(false);
@@ -237,56 +279,67 @@ export function OpenApp() {
     setMinDone(false);
     setFrameDone(false);
     setGone(false);
-    fetch(`/api/apps/${id}/opened`, { method: 'POST' }).catch(() => {});
-    const t = setTimeout(() => setMinDone(true), 850);
+    markOpened(id);
+    const t = setTimeout(() => setMinDone(true), 380);
     return () => clearTimeout(t);
   }, [id]);
   const launched = minDone && frameDone;
   useEffect(() => {
     if (!launched) return;
-    const t = setTimeout(() => setGone(true), 500);
+    const t = setTimeout(() => setGone(true), 450);
     return () => clearTimeout(t);
   }, [launched]);
 
-  const icon = liveApp ? (
-    <img src={iconSrc(liveApp)} alt="" width={32} height={32} style={{ borderRadius: 8 }} />
-  ) : mock ? (
-    <AppIcon kind={mock.icon} size={32} />
-  ) : null;
-  const bigIcon = liveApp ? (
-    <img src={iconSrc(liveApp)} alt="" width={96} height={96} style={{ borderRadius: 24 }} />
-  ) : mock ? (
-    <AppIcon kind={mock.icon} size={96} />
-  ) : null;
+  const chrome = (
+    <AppChrome
+      name={name} id={id} icon={app ? <AppGlyph app={app} size={28} /> : null}
+      onMenu={openMenu} onHome={() => nav('/')} onSearch={openSearch}
+    />
+  );
 
   // Backend is up and has never heard of this app: explain, don't iframe.
-  if (live !== undefined && !known) {
+  if (status === 'live' && !known) {
     return (
       <div className="appwrap">
-        <AppChrome name={name} id={id ?? ''} icon={icon} onMenu={openMenu} onHome={() => nav('/')} />
+        {chrome}
         <div className="appmessage">
-          <h2>No app called “{id}”</h2>
-          <p>It may not be installed, or its manifest failed validation.</p>
-          <p><Link to="/apps">All apps</Link> · <Link to="/settings">Settings (manifest errors)</Link></p>
+          <EmptyState
+            icon={<IconAlert size={28} />}
+            title={`No app called “${id}”`}
+            body="It may not be installed, or its manifest failed validation."
+            action={
+              <div className="row-gap">
+                <Link to="/apps" className="btn btn-primary">All apps</Link>
+                <Link to="/settings" className="btn btn-soft">Manifest errors</Link>
+              </div>
+            }
+          />
         </div>
       </div>
     );
   }
-  if (mock?.offline) {
+  if (app?.offline) {
     return (
       <div className="appwrap">
-        <AppChrome name={name} id={id ?? ''} icon={icon} onMenu={openMenu} onHome={() => nav('/')} />
+        {chrome}
         <div className="appmessage">
-          <h2>{mock.name} is offline</h2>
-          <p>The service didn't answer its health check. Start it, then retry.</p>
-          <button className="btn btn-navy" onClick={() => location.reload()}>Retry</button>
+          <EmptyState
+            icon={<AppGlyph app={app} size={64} />}
+            title={`${app.name} is offline`}
+            body="The service didn't answer its health check. Start it, then retry."
+            action={
+              <button type="button" className="btn btn-primary" onClick={() => refetch()} disabled={isFetching}>
+                <IconRefresh size={16} className={isFetching ? 'spin' : ''} />{isFetching ? 'Checking…' : 'Retry'}
+              </button>
+            }
+          />
         </div>
       </div>
     );
   }
   return (
     <div className="appwrap">
-      <AppChrome name={name} id={id ?? ''} icon={icon} onMenu={openMenu} onHome={() => nav('/')} />
+      {chrome}
       <iframe
         key={id}
         className="appframe-full"
@@ -296,67 +349,138 @@ export function OpenApp() {
       />
       {!gone && (
         <div className={`splash${launched ? ' done' : ''}`}>
-          {bigIcon}
+          <span className="splash-icon">
+            {app && <AppGlyph app={app} size={96} />}
+          </span>
           <div className="splash-name">{name}</div>
           <div className="splash-bar"><span /></div>
-          <div className="splash-sub">Launching…</div>
         </div>
       )}
     </div>
   );
 }
 
-function AppChrome({ name, id, icon, onMenu, onHome }: {
-  name: string; id: string; icon: ReactNode; onMenu: () => void; onHome: () => void;
+function AppChrome({ name, id, icon, onMenu, onHome, onSearch }: {
+  name: string; id: string; icon: ReactNode; onMenu: () => void; onHome: () => void; onSearch: () => void;
 }) {
   return (
     <header className="appchrome">
-      <button type="button" className="achrome-btn" onClick={onMenu} title="Menu (sidebar)">
-        <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M4 7h16M4 12h16M4 17h16" /></svg>
-      </button>
-      <button type="button" className="achrome-btn" onClick={onHome} title="Home">
-        <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="2" strokeLinejoin="round"><path d="M4 11l8-7 8 7v9h-5v-6h-6v6H4z" /></svg>
-      </button>
+      <button type="button" className="icon-btn" onClick={onMenu} aria-label="Menu" title="Menu"><IconMenu size={18} /></button>
+      <button type="button" className="icon-btn" onClick={onHome} aria-label="Home" title="Home"><IconHome size={18} /></button>
       <span className="achrome-app">{icon}<b>{name}</b></span>
       <span style={{ flexGrow: 1 }} />
-      <a className="achrome-btn" href={`/apps/${id}/`} target="_blank" rel="noreferrer" title="Open full screen">
-        <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M14 4h6v6M20 4l-9 9M18 13v6H5V6h6" /></svg>
+      <button type="button" className="achrome-search" onClick={onSearch}>
+        <IconSearch size={16} /><span>Switch app</span><kbd>Ctrl K</kbd>
+      </button>
+      <a className="icon-btn" href={`/apps/${id}/`} target="_blank" rel="noreferrer" aria-label="Open in new tab" title="Open in new tab">
+        <IconPopOut size={18} />
       </a>
     </header>
   );
 }
 
+const THEMES: { value: ThemePref; label: string; icon: ReactNode }[] = [
+  { value: 'system', label: 'System', icon: <IconMonitor size={16} /> },
+  { value: 'light', label: 'Light', icon: <IconSun size={16} /> },
+  { value: 'dark', label: 'Dark', icon: <IconMoon size={16} /> },
+];
+
 export function Settings() {
-  const { data: errors, refetch } = useRegistryErrors();
-  const [msg, setMsg] = useState('');
+  const { data: errors, refetch, isPending } = useRegistryErrors();
+  const qc = useQueryClient();
+  const { toast } = useShell();
+  const { pref, set } = useTheme();
+  const [scan, setScan] = useState<'idle' | 'busy' | 'done' | 'fail'>('idle');
+  const doneTimer = useRef<number | undefined>(undefined);
+  useEffect(() => () => window.clearTimeout(doneTimer.current), []);
+
   const rescan = async () => {
-    setMsg('Scanning…');
+    setScan('busy');
     try {
-      await fetch('/api/registry/rescan', { method: 'POST' });
-      await refetch();
-      setMsg('Rescanned apps/.');
+      const r = await fetch('/api/registry/rescan', { method: 'POST' });
+      if (!r.ok) throw new Error();
+      await Promise.all([refetch(), qc.invalidateQueries()]);
+      setScan('done');
+      doneTimer.current = window.setTimeout(() => setScan('idle'), 2400);
     } catch {
-      setMsg('Rescan failed — is the Hub server running?');
+      setScan('fail');
+      toast('Rescan failed — is the Hub server running?');
     }
   };
+
   return (
     <>
-      <h1 className="hero-title" style={{ fontSize: 34 }}>Settings</h1>
-      <p style={{ color: '#6a6574' }}>
-        Drop a folder with <code>hub.json</code> into <code>apps/</code>, then rescan.
-      </p>
-      <button className="btn btn-navy" onClick={rescan}>Rescan apps/</button>
-      {msg && <p style={{ color: '#6a6574' }}>{msg}</p>}
-      <h2 className="section-title" style={{ marginTop: 24 }}>Manifest errors</h2>
-      {!errors || errors.length === 0 ? (
-        <p style={{ color: '#6a6574' }}>None — every manifest is valid.</p>
-      ) : (
-        <ul>
-          {errors.map((e) => (
-            <li key={e.id}><b>{e.id}</b>: {e.reason}</li>
-          ))}
-        </ul>
-      )}
+      <PageHeader title="Settings" eyebrow="Make Hub yours" />
+      <div className="settings-grid">
+        <section className="panel">
+          <h2 className="panel-title">Appearance</h2>
+          <p className="panel-body">Follow your system, or pin Hub to light or dark.</p>
+          <div className="segmented" role="radiogroup" aria-label="Theme">
+            {THEMES.map((t) => (
+              <button
+                key={t.value}
+                type="button"
+                role="radio"
+                aria-checked={pref === t.value}
+                className={pref === t.value ? 'on' : ''}
+                onClick={() => set(t.value)}
+              >
+                {t.icon}{t.label}
+              </button>
+            ))}
+          </div>
+        </section>
+
+        <section className="panel">
+          <h2 className="panel-title">Apps folder</h2>
+          <p className="panel-body">
+            Drop a folder with <code>hub.json</code> into <code>apps/</code>, then rescan.
+          </p>
+          <button type="button" className="btn btn-primary" onClick={rescan} disabled={scan === 'busy'}>
+            {scan === 'done' ? <IconCheck size={16} /> : <IconRefresh size={16} className={scan === 'busy' ? 'spin' : ''} />}
+            {scan === 'busy' ? 'Scanning…' : scan === 'done' ? 'Up to date' : 'Rescan apps/'}
+          </button>
+        </section>
+
+        <section className="panel wide">
+          <h2 className="panel-title">Manifest errors</h2>
+          {isPending ? (
+            <p className="panel-body">Checking…</p>
+          ) : !errors ? (
+            <p className="panel-body">Start the Hub server to validate manifests.</p>
+          ) : errors.length === 0 ? (
+            <p className="panel-body ok-text"><IconCheck size={16} /> Every manifest is valid.</p>
+          ) : (
+            <ul className="error-list">
+              {errors.map((e) => (
+                <li key={e.id}>
+                  <IconAlert size={18} />
+                  <div><b>{e.id}</b><span>{e.reason}</span></div>
+                </li>
+              ))}
+            </ul>
+          )}
+        </section>
+
+        <section className="panel">
+          <h2 className="panel-title">Integrations</h2>
+          <p className="panel-body">Weather and calendar feed the status strip on Home.</p>
+          <ul className="integration-list">
+            <li><span>Weather</span><span className="soon">Coming soon</span></li>
+            <li><span>Calendar (ICS)</span><span className="soon">Coming soon</span></li>
+          </ul>
+        </section>
+
+        <section className="panel">
+          <h2 className="panel-title">Keyboard</h2>
+          <ul className="shortcut-list">
+            <li><span>Search apps and actions</span><span><kbd>Ctrl</kbd><kbd>K</kbd></span></li>
+            <li><span>Quick search</span><span><kbd>/</kbd></span></li>
+            <li><span>Move through results</span><span><kbd>↑</kbd><kbd>↓</kbd></span></li>
+            <li><span>Close menu or palette</span><span><kbd>Esc</kbd></span></li>
+          </ul>
+        </section>
+      </div>
     </>
   );
 }
