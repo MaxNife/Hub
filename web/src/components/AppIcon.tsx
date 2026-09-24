@@ -38,7 +38,7 @@ export function AppIcon({ kind, size = 76 }: { kind: AppIconKind; size?: number 
       );
     case 'names':
       return (
-        <svg viewBox="0 0 72 72" {...s}><rect width="72" height="72" rx="18" fill="#1F2A44" /><text x="36" y="45" textAnchor="middle" fontFamily="Bricolage Grotesque, sans-serif" fontWeight="700" fontSize="28" fill="#FFD34D">Aa</text></svg>
+        <svg viewBox="0 0 72 72" {...s}><rect width="72" height="72" rx="18" fill="#1F2A44" /><text x="36" y="45" textAnchor="middle" fontFamily="'Bricolage Grotesque Variable', 'Bricolage Grotesque', system-ui, sans-serif" fontWeight="700" fontSize="28" fill="#FFD34D">Aa</text></svg>
       );
   }
 }

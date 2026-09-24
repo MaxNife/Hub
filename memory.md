@@ -10,6 +10,7 @@ Date: 24 Sep 2026. Stack: Go backend + React+TS frontend + SQLite. Status: M0–
 - **M2 shell** (`web/`): sidebar + categories + All apps (Install/Hide/Pin) + Favorites + Recent pages + Settings (rescan, manifest errors) + Ctrl+K palette over live apps. Mock data fallback when backend down; honest empty states when up.
 - **App-mode launch UX**: opening an app goes full-bleed (no sidebar/padding), splash screen (icon + name + shimmer, min 850ms + iframe onLoad, then fade), slim blurred chrome (menu drawer · home · name · pop-out), sidebar as overlay drawer. Esc-to-home was tried and **removed** (accidental navigation).
 - **M3 apps**: Converter (length/weight/volume/temp + **live currency** via `open.er-api.com`, frankfurter fallback, 24h cache, offline note, ↻ refresh), Memory (8-pair flip game, fits viewport exactly, best in `memory:best`), Meal picker (shuffle pick, editable list, `meal-picker:meals/last`). Home Recently-used orders by real `opened_at` with relative times; widgets read apps' shared localStorage (Memory best, tonight's pick).
+- **Design pass** (branch `claude/frontend-design-aesthetics-6dgl8t`): colour tokens with light/dark/system theme (`web/src/theme.ts`, `hub:theme`), self-hosted fonts (@fontsource), shadows/grain/widget motifs, hover/press/focus states, staggered entrances, icon→splash morph via View Transitions, Raycast-style palette (fuzzy, ↑/↓, recents, actions, `/` shortcut), optimistic pin/hide with Undo toast, skeletons, honest status pills, inline meal reroll, mobile app bar + widget carousel, reduced-motion support, Memory confetti. Shared UI in `web/src/components/ui.tsx`; one app shape (`TileApp`, `useApps()`) for live and demo data.
 - **E2E**: `e2e.cjs`, 13/13 passing (health, shell, SPA fallback, CRUD state, pin, hide-gates-iframe, static/icon/redirect/traversal/privacy 404s, broken-manifest isolation, all 3 apps serving).
 
 ## How to run
@@ -18,6 +19,8 @@ Date: 24 Sep 2026. Stack: Go backend + React+TS frontend + SQLite. Status: M0–
 - Go toolchain: user installed system-wide; `.tools/` holds only `GO_LOCATION.md` — **do not re-download a local toolchain**.
 
 ## Environment gotchas
+
+- `cmd/hub/` was never committed: the old `.gitignore` line `hub` also matched that directory (now anchored as `/hub`). Commit `cmd/hub/main.go` from the dev machine.
 
 - Smart App Control (enforced) blocks unsigned `hub.exe` (CodeIntegrity 3077/3118) → dev via `go run`; release binary needs allow-listing (noted in README).
 - PowerShell 5.1 non-interactive: no `&&`, no `echo`/`head`; use `;`, `Write-Host`, `Select-Object`. `Invoke-WebRequest` prompts fail → use `curl.exe`. Complex `node -e` quoting breaks → write `.cjs` files instead.
