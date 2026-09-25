@@ -1,0 +1,12 @@
+{
+  "manifestVersion": 1,
+  "id": "football",
+  "name": "Football",
+  "description": "Live scores, fixtures and tables",
+  "category": "Info",
+  "tags": ["scores", "fixtures", "league", "soccer"],
+  "icon": "icon.svg",
+  "type": "service",
+  "upstream": "http://127.0.0.1:8101",
+  "health": "/health"
+}
