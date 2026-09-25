@@ -1,5 +1,5 @@
-// Package serve routes /apps/{id}/* to static files (M1) or service
-// upstreams (M4). Unknown or uninstalled ids are 404.
+// Package serve routes /apps/{id}/* to static files or, for service apps,
+// through the reverse proxy. Unknown or uninstalled ids are 404.
 package serve
 
 import (
@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"hub/internal/proxy"
 	"hub/internal/registry"
 	"hub/internal/store"
 )
@@ -16,6 +17,7 @@ import (
 type Server struct {
 	Registry *registry.Registry
 	Store    *store.Store
+	Proxy    *proxy.Proxy
 }
 
 func (s *Server) Handler() http.Handler {
@@ -37,15 +39,19 @@ func (s *Server) serve(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if app.Type == "service" {
-		// Reverse proxy lands in M4.
-		http.Error(w, "service apps not served yet (M4)", http.StatusNotImplemented)
-		return
-	}
-
 	// /apps/{id} -> /apps/{id}/ so relative asset URLs resolve.
 	if !strings.HasSuffix(r.URL.Path, "/") && sub == "" {
 		http.Redirect(w, r, r.URL.Path+"/", http.StatusFound)
+		return
+	}
+
+	if app.Type == "service" {
+		// The manifest icon lives in Hub's apps/ folder, not on the service.
+		if sub == filepath.ToSlash(app.Icon) {
+			http.ServeFile(w, r, filepath.Join(app.Dir, filepath.FromSlash(app.Icon)))
+			return
+		}
+		s.Proxy.Serve(w, r, app, sub)
 		return
 	}
 

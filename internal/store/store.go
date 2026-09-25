@@ -7,8 +7,10 @@ import (
 	"fmt"
 	"io/fs"
 	"log/slog"
+	"os"
 	"path/filepath"
 	"sort"
+	"time"
 
 	_ "modernc.org/sqlite"
 )
@@ -31,9 +33,7 @@ func Open(dataDir string) (*Store, error) {
 		db.Close()
 		return nil, err
 	}
-	// Prune old rows opportunistically (90d opens, 7d health).
-	_, _ = db.Exec(`DELETE FROM app_opens WHERE opened_at < datetime('now','-90 days')`);
-	_, _ = db.Exec(`DELETE FROM health_checks WHERE checked_at < datetime('now','-7 days')`);
+	_ = s.Prune(context.Background())
 	return s, nil
 }
 
@@ -71,3 +71,30 @@ func (s *Store) migrate(ctx context.Context) error {
 }
 
 func (s *Store) Close() error { return s.DB.Close() }
+
+// Prune applies the retention rules: opens 90 days, health checks 7 days,
+// expired sessions. Timestamps are RFC 3339 UTC, which sort as text.
+func (s *Store) Prune(ctx context.Context) error {
+	now := time.Now().UTC()
+	stmts := []struct {
+		q   string
+		arg string
+	}{
+		{`DELETE FROM app_opens WHERE opened_at < ?`, now.AddDate(0, 0, -90).Format(time.RFC3339)},
+		{`DELETE FROM health_checks WHERE checked_at < ?`, now.AddDate(0, 0, -7).Format(time.RFC3339)},
+		{`DELETE FROM sessions WHERE expires_at < ?`, now.Format(time.RFC3339)},
+	}
+	for _, st := range stmts {
+		if _, err := s.DB.ExecContext(ctx, st.q, st.arg); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// Backup writes a consistent copy of the database while Hub runs.
+func (s *Store) Backup(ctx context.Context, path string) error {
+	_ = os.Remove(path) // VACUUM INTO refuses to overwrite
+	_, err := s.DB.ExecContext(ctx, `VACUUM INTO ?`, path)
+	return err
+}

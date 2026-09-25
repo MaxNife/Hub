@@ -4,6 +4,8 @@
 /hub
 data/hub.db*
 data/*.log
+data/hub.log.*
+data/backups/
 web/dist/
 web/node_modules/
 
