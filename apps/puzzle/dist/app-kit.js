@@ -11,6 +11,7 @@
  *     fields: [                                  // the Settings sheet (or a function returning them)
  *       { type: 'heading', label: 'Defaults' },
  *       { key: 'decimals', label: 'Decimal places', type: 'choice', def: '4', choices: [['2', '2'], ['4', '4']] },
+ *       { key: 'lang', label: 'Language', type: 'select', def: 'en', choices: [['en', 'English'], …] },
  *       { key: 'haptics', label: 'Vibrate', type: 'toggle', def: true, hint: 'On phones' },
  *       { key: 'volume', label: 'Volume', type: 'range', def: 70, min: 0, max: 100 },
  *       { key: 'name', label: 'Your name', type: 'text', def: '' },
@@ -18,6 +19,7 @@
  *       { type: 'action', label: 'Clear history', danger: true, run: (kit, close) => … },
  *     ],
  *     onChange: (key, value, settings) => …,
+ *     settingsKey: 'football:app',               // optional; default '<id>:settings'
  *   });
  *   kit.header({ tagline: 'Units and currencies' })  // greeting, title, Settings button
  *   kit.settings.decimals; kit.set('decimals', '2'); kit.store.get('history', []);
@@ -65,7 +67,8 @@
     var defaults = {};
     fieldList().forEach(function (f) { if (f.key) defaults[f.key] = f.def; });
     Object.assign(defaults, cfg.defaults || {});
-    var settings = Object.assign({}, defaults, load(id + ':settings', {}));
+    var SKEY = cfg.settingsKey || id + ':settings';  // an app whose widget already uses <id>:settings picks another
+    var settings = Object.assign({}, defaults, load(SKEY, {}));
 
     // Visits: the greeting says "welcome back" and when you were last here.
     var visits = load(id + ':visits', { count: 0, last: 0 });
@@ -86,7 +89,7 @@
       },
       set: function (key, value) {
         settings[key] = value;
-        save(id + ':settings', settings);
+        save(SKEY, settings);
         if (cfg.onChange) cfg.onChange(key, value, settings);
       },
       greeting: function () {
@@ -146,6 +149,13 @@
             e.currentTarget.parentNode.querySelectorAll('button').forEach(function (b) { b.setAttribute('aria-pressed', String(b === e.currentTarget)); });
           } }, [c[1]]);
         }))]);
+      }
+      if (f.type === 'select') {
+        var sel = el('select', { 'aria-label': f.label }, f.choices.map(function (c) {
+          return el('option', { value: c[0], selected: String(settings[f.key]) === String(c[0]) }, [c[1]]);
+        }));
+        sel.addEventListener('change', function () { kit.set(f.key, sel.value); });
+        return el('label', { class: 'ak-field' }, [label, sel]);
       }
       if (f.type === 'range') {
         var out = el('small', { class: 'ak-range-out' }, [settings[f.key] + (f.unit || '')]);

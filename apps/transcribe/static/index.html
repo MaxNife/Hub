@@ -68,51 +68,85 @@
   .text { margin-top: 12px; padding: 16px; border: 1px solid var(--line); border-radius: 14px; background: var(--surface); font-size: 16px; line-height: 1.6; white-space: pre-wrap; max-height: 360px; overflow: auto; }
   .actions { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 10px; }
   .empty { margin-top: 16px; color: var(--muted); font-size: 15px; }
+  .stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+  .stat { padding: 12px; border: 1px solid var(--line); border-radius: 14px; background: var(--surface); text-align: center; }
+  .stat b { display: block; font-family: var(--display); font-size: 24px; font-weight: 700; letter-spacing: -.02em; }
+  .stat small { font-size: 12px; color: var(--muted); }
+  .find { width: 100%; height: 44px; margin-bottom: 8px; padding: 0 14px; border: 1px solid var(--line); border-radius: 12px; background: var(--surface); font: inherit; font-size: 15px; }
+  .drop { margin-top: 20px; }
   @media (max-width: 640px) { .wrap { padding: 20px 16px 32px; } h1 { font-size: 36px; } }
   @media (prefers-reduced-motion: reduce) { .bar.busy span { animation: none; } }
 </style>
+<link rel="stylesheet" href="./app-kit.css">
 </head>
 <body>
 <div class="wrap">
-  <h1>Transcribe</h1>
-  <p class="lead">Turn recordings into text. Files are transcribed on this computer, one at a time, while you use other apps.</p>
+  <div id="head"></div>
+  <div class="stats" id="stats" hidden></div>
   <div class="notice" id="engine" hidden></div>
-
   <label class="drop" id="drop" for="file">
     <b>Drop audio or video here</b>
     <p>MP3, M4A, WAV, MP4 and more</p>
     <span class="row">
       <span class="ink" style="display:inline-flex;align-items:center" role="button">Choose a file</span>
-      <select id="lang" aria-label="Language" onclick="event.preventDefault(); event.stopPropagation();">
-        <option value="auto">Detect language</option>
-        <option value="en">English</option><option value="fr">French</option><option value="es">Spanish</option>
-        <option value="de">German</option><option value="pt">Portuguese</option><option value="yo">Yoruba</option>
-        <option value="ig">Igbo</option><option value="ha">Hausa</option><option value="sw">Swahili</option>
-      </select>
+      <select id="lang" aria-label="Language" onclick="event.preventDefault(); event.stopPropagation();"></select>
     </span>
     <input id="file" type="file" accept="audio/*,video/*" multiple hidden>
   </label>
-
-  <h2>Recordings</h2>
-  <div id="jobs" aria-live="polite"></div>
+  <section class="ak-section">
+    <div class="ak-section-head"><h2 style="margin:0">Your recordings</h2></div>
+    <input class="find" id="find" type="search" placeholder="Search names and transcripts" aria-label="Search recordings" hidden>
+    <div id="jobs" aria-live="polite"></div>
+  </section>
 </div>
+<script src="./app-kit.js"></script>
 <script>
 (function () {
   'use strict';
+  var LANGS = [['auto', 'Detect language'], ['en', 'English'], ['fr', 'French'], ['es', 'Spanish'], ['de', 'German'], ['pt', 'Portuguese'],
+    ['yo', 'Yoruba'], ['ig', 'Igbo'], ['ha', 'Hausa'], ['sw', 'Swahili']];
+  var FORMATS = { txt: 'Text .txt', srt: 'Subtitles .srt', vtt: 'Web subtitles .vtt' };
+  var kit = AppKit.create({
+    id: 'transcribe',
+    title: 'Transcribe',
+    fields: [
+      { type: 'heading', label: 'New recordings' },
+      { key: 'language', label: 'Language', type: 'select', def: 'auto', choices: LANGS },
+      { type: 'heading', label: 'Transcripts' },
+      { key: 'format', label: 'Download as', type: 'choice', def: 'txt', choices: [['txt', '.txt'], ['srt', '.srt'], ['vtt', '.vtt']] },
+      { key: 'openDone', label: 'Open a transcript when it’s ready', type: 'toggle', def: true },
+      { key: 'notify', label: 'Tell me when one finishes', type: 'toggle', def: false, hint: 'A browser notification, if you allow it' },
+      { type: 'heading', label: 'Tidying up' },
+      { key: 'cleanup', label: 'Delete finished recordings after', type: 'choice', def: '0', choices: [['0', 'Never'], ['7', '1 week'], ['30', '1 month']],
+        hint: 'Recordings and transcripts are kept on the Hub machine until then' },
+    ],
+    onChange: function (key, value) {
+      if (key === 'language') lang.value = value;
+      if (key === 'notify' && value && window.Notification && Notification.permission === 'default') Notification.requestPermission();
+      if (key === 'cleanup') tidy(cache.list || []);
+      render();
+    },
+  });
+  document.getElementById('head').replaceWith(kit.header({ tagline: 'Turn recordings into text, on this computer, while you use other apps.' }));
   var jobsEl = document.getElementById('jobs');
   var drop = document.getElementById('drop');
   var fileInput = document.getElementById('file');
   var lang = document.getElementById('lang');
+  var find = document.getElementById('find');
+  LANGS.forEach(function (l) { var o = document.createElement('option'); o.value = l[0]; o.textContent = l[1]; lang.appendChild(o); });
+  lang.value = kit.settings.language;
   var open = {};        // job ids with the transcript expanded
   var uploads = {};     // temporary rows while a file uploads
   var timer = null;
   var cache = {};
+  var texts = {};       // transcript text by job id, for search
+  var wasBusy = {};     // jobs that were running last time we looked
   var engineMissing = false;
-
   lang.addEventListener('mousedown', function (e) { e.stopPropagation(); });
   lang.addEventListener('click', function (e) { e.stopPropagation(); });
-
-  function esc(s) { var d = document.createElement('div'); d.textContent = s == null ? '' : String(s); return d.innerHTML; }
+  lang.addEventListener('change', function () { kit.set('language', lang.value); });
+  find.addEventListener('input', function () { render(); });
+    function esc(s) { var d = document.createElement('div'); d.textContent = s == null ? '' : String(s); return d.innerHTML; }
   function size(n) { return n > 1e9 ? (n / 1e9).toFixed(1) + ' GB' : n > 1e6 ? (n / 1e6).toFixed(1) + ' MB' : Math.max(1, Math.round(n / 1e3)) + ' KB'; }
   function mins(s) { var m = Math.floor(s / 60), r = Math.round(s % 60); return m ? m + ' min ' + (r ? r + ' s' : '') : r + ' s'; }
 
@@ -158,9 +192,30 @@
     return j.error || 'Failed';
   }
 
+  function downloads(id) {
+    var first = kit.settings.format;
+    return [first].concat(Object.keys(FORMATS).filter(function (f) { return f !== first; })).map(function (f, i) {
+      return '<a class="pill" style="display:inline-flex;align-items:center;text-decoration:none;color:inherit' + (i === 0 ? ';background:var(--ink);color:var(--paper);border-color:var(--ink)' : '') +
+        '" href="./api/jobs/' + id + '/transcript.' + f + '">' + (i === 0 ? 'Download ' : '') + FORMATS[f] + '</a>';
+    }).join('');
+  }
+  function stats(list) {
+    var done = list.filter(function (j) { return j.status === 'done'; });
+    var secs = done.reduce(function (a, j) { return a + (j.duration || 0); }, 0);
+    var box = document.getElementById('stats');
+    box.hidden = !list.length;
+    var hours = secs >= 3600 ? (secs / 3600).toFixed(1) + ' hr' : Math.round(secs / 60) + ' min';
+    box.innerHTML = '<div class="stat"><b>' + done.length + '</b><small>Transcribed</small></div>' +
+      '<div class="stat"><b>' + hours + '</b><small>Of audio</small></div>' +
+      '<div class="stat"><b>' + list.filter(function (j) { return j.status === 'queued' || j.status === 'running'; }).length + '</b><small>In progress</small></div>';
+  }
   function render(list) {
     if (list) cache.list = list;
     list = cache.list || [];
+    stats(list);
+    find.hidden = list.length < 4;
+    var q = find.value.trim().toLowerCase();
+    if (q) list = list.filter(function (j) { return j.name.toLowerCase().indexOf(q) >= 0 || (texts[j.id] || '').toLowerCase().indexOf(q) >= 0; });
     var html = '';
     Object.keys(uploads).forEach(function (k) {
       var u = uploads[k];
@@ -177,11 +232,10 @@
         (running ? '<div class="bar' + (j.status === 'queued' || !j.duration ? ' busy' : '') + '"><span style="width:' + (j.progress * 100) + '%"></span></div>' : '') +
         (open[j.id] && open[j.id].text != null ? '<div class="text">' + esc(open[j.id].text || '(No speech found)') + '</div>' +
           '<div class="actions"><button class="pill" data-act="copy">Copy text</button>' +
-          '<a class="pill" style="display:inline-flex;align-items:center;text-decoration:none;color:inherit" href="./api/jobs/' + j.id + '/transcript.txt">Download .txt</a>' +
-          '<a class="pill" style="display:inline-flex;align-items:center;text-decoration:none;color:inherit" href="./api/jobs/' + j.id + '/transcript.srt">Subtitles .srt</a></div>' : '') +
+          downloads(j.id) + '</div>' : '') +
         '</div>';
     });
-    jobsEl.innerHTML = html || '<p class="empty">Nothing yet. Drop a recording above to start.</p>';
+    jobsEl.innerHTML = html || (q ? '<p class="empty">Nothing matches “' + esc(q) + '”.</p>' : '<p class="ak-empty">Nothing yet. Drop a recording above to start.</p>');
   }
 
   jobsEl.addEventListener('click', function (e) {
@@ -192,7 +246,7 @@
     if (act === 'toggle') {
       if (open[id]) { delete open[id]; render(); return; }
       open[id] = {};
-      fetch('./api/jobs/' + id).then(function (r) { return r.json(); }).then(function (j) { open[id] = { text: j.text }; render(); });
+      fetch('./api/jobs/' + id).then(function (r) { return r.json(); }).then(function (j) { open[id] = { text: j.text }; texts[id] = j.text || ''; render(); });
     } else if (act === 'copy') {
       navigator.clipboard.writeText(open[id].text || '').then(function () { b.textContent = 'Copied'; setTimeout(function () { b.textContent = 'Copy text'; }, 1500); });
     } else if (act === 'delete') {
@@ -203,12 +257,47 @@
   function refresh() {
     clearTimeout(timer);
     fetch('./api/jobs').then(function (r) { return r.json(); }).then(function (list) {
+      finished(list);
+      list = tidy(list);
       render(list);
       var busy = list.some(function (j) { return j.status === 'queued' || j.status === 'running'; });
       timer = setTimeout(refresh, busy || Object.keys(uploads).length ? 1500 : 10000);
     }).catch(function () { timer = setTimeout(refresh, 5000); });
   }
 
+  // A job that just finished: open it, and say so if you asked.
+  function finished(list) {
+    list.forEach(function (j) {
+      var busy = j.status === 'queued' || j.status === 'running';
+      if (wasBusy[j.id] && j.status === 'done') {
+        if (kit.settings.openDone && !open[j.id]) {
+          open[j.id] = {};
+          fetch('./api/jobs/' + j.id).then(function (r) { return r.json(); }).then(function (full) { open[j.id] = { text: full.text }; texts[j.id] = full.text || ''; render(); });
+        }
+        if (kit.settings.notify && window.Notification && Notification.permission === 'granted') new Notification('Transcript ready', { body: j.name });
+        else kit.toast(j.name + ' is ready');
+      }
+      wasBusy[j.id] = busy;
+    });
+  }
+  // Delete finished recordings older than the setting.
+  function tidy(list) {
+    var days = +kit.settings.cleanup;
+    if (!days) return list;
+    return list.filter(function (j) {
+      var old = j.status !== 'queued' && j.status !== 'running' && j.finished_at && Date.now() / 1000 - j.finished_at > days * 86400;
+      if (old) fetch('./api/jobs/' + j.id, { method: 'DELETE' });
+      return !old;
+    });
+  }
+  // Fill search with transcripts in the background.
+  function loadTexts(list) {
+    list.filter(function (j) { return j.status === 'done' && texts[j.id] == null; }).slice(0, 30).forEach(function (j) {
+      texts[j.id] = '';
+      fetch('./api/jobs/' + j.id).then(function (r) { return r.json(); }).then(function (full) { texts[j.id] = full.text || ''; });
+    });
+  }
+  find.addEventListener('focus', function () { loadTexts(cache.list || []); });
   fetch('./health').then(function (r) { return r.json(); }).then(function (h) {
     if (h.engine === 'missing') {
       engineMissing = true;
