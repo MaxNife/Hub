@@ -134,9 +134,21 @@ Pick `static` whenever an app can run entirely in the browser; use `service` onl
 - Keep long work (a 20-minute transcription) off the request: accept the job, return a job id, let the UI poll for progress.
 - Keep its own secrets (API keys) in its own environment, never in `hub.json`.
 
-**Games.** Memory, Reaction and Puzzle share a game kit (`appkit/game-kit.js`, copied into each game by `appkit/sync.py`): a home screen with Continue, New game, difficulty and stats, and settings for sound effects, music, volume and game options. Each game saves the game in progress in its own keys (`memory:progress`, `reaction:round`, `puzzle:save`). Hub opens a game at `#continue` or `#new`: `/open/{id}#continue` passes the hash to the iframe, which is how Home's Resume button reopens a Memory game where it was left.
+**Apps, games and widgets.** A widget (a row on Home, like the football carousel) only has settings, and they live in Hub's Settings. An app or game is different: it opens on its own personalized home screen and has its own settings, as it would if it were installed on its own. Every app builds these with the app kit (`appkit/app-kit.js`): a greeting header with a Settings button, a settings sheet, and namespaced storage. An app's settings are separate from its widget's: the Football app keeps its clubs and leagues in `football:app`, seeded the first time from the widget's `football:settings`.
 
-**Documents** (`apps/documents`, Python, :8103) is an all-in-one PDF tool in the spirit of iLovePDF: merge, split, remove and reorder pages, rotate, compress, page numbers, watermarks, passwords; convert images ↔ PDF, Word/Excel/PowerPoint → PDF (LibreOffice), PDF → Word (pdf2docx) and text; and a page editor for text, whiteout, highlight, drawing, images, signatures and true redaction (PyMuPDF). Files are processed on the Hub machine and deleted after two hours.
+| App | Home screen | Its own settings |
+| --- | --- | --- |
+| Converter | Converter, favourite pairs, recent conversions | Decimal places, grouping, your currency, history |
+| Meal picker | Tonight's pick, this week, your meals (starred) | No repeats window, favour starred, meal, animation |
+| Random | Dice, coin, number, pick one; saved lists; history | Dice type, total, no repeats, vibrate, history |
+| Name generator | New names, starred | How many, a word to include, starting letter, copy format |
+| Football | Your clubs (live, last, next), matches, tables | Clubs, leagues, opening view, 12/24 h, stadiums |
+| Transcribe | Totals, drop zone, your recordings with search | Language, download format, open when ready, notify, tidy-up |
+| Documents | Unsaved edits, recent files, your tools, all tools | Keep files, auto-download, compression, page size, signature |
+
+**Games.** Memory, Reaction and Puzzle share a game kit (`appkit/game-kit.js`, built on the app kit and copied into each game by `appkit/sync.py`): a home screen with Continue, New game, difficulty and stats, and settings for sound effects, music, volume and game options. Each game saves the game in progress in its own keys (`memory:progress`, `reaction:round`, `puzzle:save`). Hub opens a game at `#continue` or `#new`: `/open/{id}#continue` passes the hash to the iframe, which is how Home's Resume button reopens a Memory game where it was left.
+
+**Documents** (`apps/documents`, Python, :8103) is an all-in-one PDF tool in the spirit of iLovePDF: merge, split, remove and reorder pages, rotate, compress, page numbers, watermarks, passwords; convert images ↔ PDF, Word/Excel/PowerPoint → PDF (LibreOffice), PDF → Word (pdf2docx) and text; and a page editor for text, whiteout, highlight, drawing, images, signatures and true redaction (PyMuPDF). Files stay on the user's device: the browser holds them (Recent files and unsaved edits in IndexedDB) and draws previews with pdf.js. The server is stateless: each `POST /api/run` carries the files as multipart form data, they are processed in memory, and the results come back in the same response. Nothing is written to the server's disk, except that LibreOffice needs a temporary copy for Office → PDF, deleted as soon as the conversion finishes.
 
 ## Hub backend (Go)
 
