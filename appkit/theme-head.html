@@ -1,0 +1,42 @@
+<script>
+  // Follow Hub's theme choice (same origin, so its setting is readable).
+  (function () {
+    function apply() {
+      try {
+        var t = localStorage.getItem('hub:theme');
+        if (t === 'light' || t === 'dark') document.documentElement.setAttribute('data-theme', t);
+        else document.documentElement.removeAttribute('data-theme');
+      } catch (e) {}
+    }
+    apply();
+    window.addEventListener('storage', function (e) { if (e.key === 'hub:theme') apply(); });
+  })();
+</script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,400..800&family=Instrument+Sans:wght@400..700&display=swap">
+<style>
+  :root {
+    color-scheme: light;
+    --paper: #eee9df; --surface: #f8f5ef; --ink: #1c1a16; --muted: #625b4f; --line: #d9d1c2; --dash: #b8ae9c;
+    --live: #1e7a48; --live-ink: #fff; --focus: #3552e0; --bad: #c0322f;
+    --display: 'Bricolage Grotesque', system-ui, sans-serif;
+    --body: 'Instrument Sans', system-ui, -apple-system, 'Segoe UI', sans-serif;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) { color-scheme: dark; --paper: #17150f; --surface: #221f18; --ink: #f2ede3; --muted: #a69e8f; --line: #35302a; --dash: #5a5345; --live: #4cc784; --live-ink: #10140f; --focus: #8fa2ff; --bad: #f0706b; }
+  }
+  :root[data-theme="dark"] { color-scheme: dark; --paper: #17150f; --surface: #221f18; --ink: #f2ede3; --muted: #a69e8f; --line: #35302a; --dash: #5a5345; --live: #4cc784; --live-ink: #10140f; --focus: #8fa2ff; --bad: #f0706b; }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--paper); color: var(--ink); font-family: var(--body); font-variant-numeric: tabular-nums; -webkit-font-smoothing: antialiased; }
+  button, input, select { font: inherit; color: inherit; }
+  :focus-visible { outline: 2px solid var(--focus); outline-offset: 3px; }
+  h1 { margin: 0; font-family: var(--display); font-size: 40px; font-weight: 700; letter-spacing: -0.04em; line-height: 1; }
+  .sub { margin: 8px 0 24px; color: var(--muted); font-size: 15px; }
+  .ink-btn { display: inline-flex; align-items: center; justify-content: center; gap: 8px; height: 44px; padding: 0 22px; border: none; border-radius: 999px; background: var(--ink); color: var(--paper); font-size: 15px; font-weight: 600; cursor: pointer; }
+  .pill-btn { display: inline-flex; align-items: center; justify-content: center; gap: 8px; height: 40px; padding: 0 16px; border: 1px solid var(--line); border-radius: 999px; background: var(--surface); font-size: 14px; font-weight: 600; cursor: pointer; }
+  .pill-btn:hover { border-color: var(--dash); }
+  .seg { display: inline-flex; gap: 4px; padding: 4px; border: 1px solid var(--line); border-radius: 999px; background: var(--surface); max-width: 100%; overflow-x: auto; }
+  .seg button { height: 34px; padding: 0 14px; border: none; border-radius: 999px; background: transparent; color: var(--muted); font-size: 14px; font-weight: 600; cursor: pointer; white-space: nowrap; }
+  .seg button.active, .seg button[aria-pressed="true"] { background: var(--ink); color: var(--paper); }
+  @media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation-duration: .01ms !important; transition-duration: .01ms !important; } }
+</style>

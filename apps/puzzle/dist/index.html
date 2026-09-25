@@ -1,0 +1,192 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Puzzle</title>
+<script>
+  // Follow Hub's theme choice (same origin, so its setting is readable).
+  (function () {
+    function apply() {
+      try {
+        var t = localStorage.getItem('hub:theme');
+        if (t === 'light' || t === 'dark') document.documentElement.setAttribute('data-theme', t);
+        else document.documentElement.removeAttribute('data-theme');
+      } catch (e) {}
+    }
+    apply();
+    window.addEventListener('storage', function (e) { if (e.key === 'hub:theme') apply(); });
+  })();
+</script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,400..800&family=Instrument+Sans:wght@400..700&display=swap">
+<style>
+  :root {
+    color-scheme: light;
+    --paper: #eee9df; --surface: #f8f5ef; --ink: #1c1a16; --muted: #625b4f; --line: #d9d1c2; --dash: #b8ae9c;
+    --live: #1e7a48; --live-ink: #fff; --focus: #3552e0; --bad: #c0322f;
+    --display: 'Bricolage Grotesque', system-ui, sans-serif;
+    --body: 'Instrument Sans', system-ui, -apple-system, 'Segoe UI', sans-serif;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) { color-scheme: dark; --paper: #17150f; --surface: #221f18; --ink: #f2ede3; --muted: #a69e8f; --line: #35302a; --dash: #5a5345; --live: #4cc784; --live-ink: #10140f; --focus: #8fa2ff; --bad: #f0706b; }
+  }
+  :root[data-theme="dark"] { color-scheme: dark; --paper: #17150f; --surface: #221f18; --ink: #f2ede3; --muted: #a69e8f; --line: #35302a; --dash: #5a5345; --live: #4cc784; --live-ink: #10140f; --focus: #8fa2ff; --bad: #f0706b; }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--paper); color: var(--ink); font-family: var(--body); font-variant-numeric: tabular-nums; -webkit-font-smoothing: antialiased; }
+  button, input, select { font: inherit; color: inherit; }
+  :focus-visible { outline: 2px solid var(--focus); outline-offset: 3px; }
+  h1 { margin: 0; font-family: var(--display); font-size: 40px; font-weight: 700; letter-spacing: -0.04em; line-height: 1; }
+  .sub { margin: 8px 0 24px; color: var(--muted); font-size: 15px; }
+  .ink-btn { display: inline-flex; align-items: center; justify-content: center; gap: 8px; height: 44px; padding: 0 22px; border: none; border-radius: 999px; background: var(--ink); color: var(--paper); font-size: 15px; font-weight: 600; cursor: pointer; }
+  .pill-btn { display: inline-flex; align-items: center; justify-content: center; gap: 8px; height: 40px; padding: 0 16px; border: 1px solid var(--line); border-radius: 999px; background: var(--surface); font-size: 14px; font-weight: 600; cursor: pointer; }
+  .pill-btn:hover { border-color: var(--dash); }
+  .seg { display: inline-flex; gap: 4px; padding: 4px; border: 1px solid var(--line); border-radius: 999px; background: var(--surface); max-width: 100%; overflow-x: auto; }
+  .seg button { height: 34px; padding: 0 14px; border: none; border-radius: 999px; background: transparent; color: var(--muted); font-size: 14px; font-weight: 600; cursor: pointer; white-space: nowrap; }
+  .seg button.active, .seg button[aria-pressed="true"] { background: var(--ink); color: var(--paper); }
+  @media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation-duration: .01ms !important; transition-duration: .01ms !important; } }
+</style>
+<style>
+  html, body { height: 100%; }
+  body { padding: 20px 16px; min-height: 100dvh; }
+  .wrap { max-width: 480px; margin: 0 auto; }
+  .top { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+  .stats { display: flex; gap: 8px; margin: 16px 0; }
+  .stat { flex: 1; padding: 6px 4px; border: 1px solid var(--line); border-radius: 12px; background: var(--surface); text-align: center; }
+  .stat b { display: block; font-size: 17px; }
+  .stat small { font-size: 11px; color: var(--muted); }
+  .board { position: relative; display: grid; gap: 8px; aspect-ratio: 1; }
+  .tile {
+    display: flex; align-items: center; justify-content: center; border: none; border-radius: 14px;
+    background: var(--surface); box-shadow: inset 0 0 0 1px var(--line);
+    font-family: var(--display); font-size: clamp(22px, 7vmin, 40px); font-weight: 700; cursor: pointer;
+    transition: transform .12s ease, background-color .2s;
+  }
+  .tile:hover { transform: scale(0.97); }
+  .tile.home { background: color-mix(in srgb, #43ddb9 22%, var(--surface)); box-shadow: inset 0 0 0 1px color-mix(in srgb, #0e8a74 45%, var(--line)); }
+  .tile.gap { visibility: hidden; }
+  .win { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px; text-align: center; border-radius: 18px; background: color-mix(in srgb, var(--paper) 94%, transparent); animation: pop .4s cubic-bezier(.34,1.56,.64,1) both; }
+  .win h2 { margin: 0; font-family: var(--display); font-size: 36px; letter-spacing: -0.03em; }
+  .win p { margin: 0 0 8px; color: var(--muted); }
+  @keyframes pop { from { opacity: 0; transform: scale(.94); } }
+  [hidden] { display: none !important; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="top">
+    <h1>Puzzle</h1>
+    <div class="seg" role="group" aria-label="Board size">
+      <button type="button" data-size="3">3 × 3</button>
+      <button type="button" data-size="4">4 × 4</button>
+    </div>
+  </div>
+  <div class="stats">
+    <div class="stat"><b id="moves">0</b><small>Moves</small></div>
+    <div class="stat"><b id="time">0:00</b><small>Time</small></div>
+    <div class="stat"><b id="best">–</b><small>Best</small></div>
+  </div>
+  <div class="board" id="board" role="grid" aria-label="Sliding puzzle. Use the arrow keys or tap a tile next to the gap.">
+    <div class="win" id="win" hidden><h2>Solved!</h2><p id="winline"></p><button class="ink-btn" id="again" type="button">Shuffle again</button></div>
+  </div>
+  <p class="sub" style="margin-top:16px">Slide the tiles into order. Arrow keys move the tile next to the gap.</p>
+  <button class="pill-btn" id="shuffle" type="button">Shuffle</button>
+</div>
+<script>
+(function () {
+  'use strict';
+  var board = document.getElementById('board'), win = document.getElementById('win');
+  var n = 4, tiles = [], moves = 0, secs = 0, timer = null, started = false;
+  try { n = parseInt(localStorage.getItem('puzzle:size') || '4', 10) === 3 ? 3 : 4; } catch (e) {}
+
+  function bestKey() { return 'puzzle:best:' + n; }
+  function best() { try { var v = JSON.parse(localStorage.getItem(bestKey()) || 'null'); return v && v.moves ? v : null; } catch (e) { return null; } }
+  function fmt(s) { return Math.floor(s / 60) + ':' + String(s % 60).padStart(2, '0'); }
+  function paintStats() {
+    document.getElementById('moves').textContent = moves;
+    document.getElementById('time').textContent = fmt(secs);
+    var b = best();
+    document.getElementById('best').textContent = b ? b.moves + ' · ' + fmt(b.secs) : '–';
+  }
+  function neighbours(i) {
+    var r = Math.floor(i / n), c = i % n, out = [];
+    if (r > 0) out.push(i - n);
+    if (r < n - 1) out.push(i + n);
+    if (c > 0) out.push(i - 1);
+    if (c < n - 1) out.push(i + 1);
+    return out;
+  }
+  // Shuffle with random legal moves, so every board is solvable.
+  function shuffle() {
+    tiles = [];
+    for (var i = 1; i < n * n; i++) tiles.push(i);
+    tiles.push(0);
+    var gap = n * n - 1, prev = -1;
+    for (var k = 0; k < n * n * 40; k++) {
+      var opts = neighbours(gap).filter(function (x) { return x !== prev; });
+      var pick = opts[Math.floor(Math.random() * opts.length)];
+      tiles[gap] = tiles[pick]; tiles[pick] = 0; prev = gap; gap = pick;
+    }
+    if (solved()) return shuffle();
+    moves = 0; secs = 0; started = false;
+    clearInterval(timer);
+    win.hidden = true;
+    render();
+  }
+  function solved() {
+    for (var i = 0; i < n * n - 1; i++) if (tiles[i] !== i + 1) return false;
+    return true;
+  }
+  function render() {
+    board.style.gridTemplateColumns = 'repeat(' + n + ', 1fr)';
+    Array.prototype.slice.call(board.querySelectorAll('.tile')).forEach(function (t) { t.remove(); });
+    tiles.forEach(function (v, i) {
+      var b = document.createElement('button');
+      b.type = 'button';
+      b.className = 'tile' + (v === 0 ? ' gap' : v === i + 1 ? ' home' : '');
+      b.textContent = v || '';
+      b.setAttribute('aria-label', v ? 'Tile ' + v : 'Gap');
+      b.addEventListener('click', function () { move(i); });
+      board.insertBefore(b, win);
+    });
+    document.querySelectorAll('[data-size]').forEach(function (b) { b.setAttribute('aria-pressed', String(+b.dataset.size === n)); });
+    paintStats();
+  }
+  function move(i) {
+    var gap = tiles.indexOf(0);
+    if (neighbours(gap).indexOf(i) < 0 || !win.hidden) return;
+    if (!started) { started = true; timer = setInterval(function () { secs++; paintStats(); }, 1000); }
+    tiles[gap] = tiles[i]; tiles[i] = 0; moves++;
+    render();
+    if (solved()) finish();
+  }
+  function finish() {
+    clearInterval(timer);
+    var b = best(), isBest = !b || moves < b.moves || (moves === b.moves && secs < b.secs);
+    if (isBest) { try { localStorage.setItem(bestKey(), JSON.stringify({ moves: moves, secs: secs })); } catch (e) {} }
+    document.getElementById('winline').textContent = moves + ' moves · ' + fmt(secs) + (isBest ? ' · new best!' : '');
+    win.hidden = false;
+    paintStats();
+  }
+  document.addEventListener('keydown', function (e) {
+    var gap = tiles.indexOf(0), r = Math.floor(gap / n), c = gap % n, t = -1;
+    if (e.key === 'ArrowUp' && r < n - 1) t = gap + n;      // tile below slides up
+    if (e.key === 'ArrowDown' && r > 0) t = gap - n;
+    if (e.key === 'ArrowLeft' && c < n - 1) t = gap + 1;
+    if (e.key === 'ArrowRight' && c > 0) t = gap - 1;
+    if (t >= 0) { e.preventDefault(); move(t); }
+  });
+  document.querySelectorAll('[data-size]').forEach(function (b) {
+    b.addEventListener('click', function () {
+      n = +b.dataset.size;
+      try { localStorage.setItem('puzzle:size', String(n)); } catch (e) {}
+      shuffle();
+    });
+  });
+  document.getElementById('shuffle').addEventListener('click', shuffle);
+  document.getElementById('again').addEventListener('click', shuffle);
+  shuffle();
+})();
+</script>
+</body>
+</html>

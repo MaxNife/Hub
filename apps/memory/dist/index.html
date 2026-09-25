@@ -4,29 +4,71 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Memory</title>
+<script>
+  // Follow Hub's theme choice (same origin, so its setting is readable).
+  (function () {
+    function apply() {
+      try {
+        var t = localStorage.getItem('hub:theme');
+        if (t === 'light' || t === 'dark') document.documentElement.setAttribute('data-theme', t);
+        else document.documentElement.removeAttribute('data-theme');
+      } catch (e) {}
+    }
+    apply();
+    window.addEventListener('storage', function (e) { if (e.key === 'hub:theme') apply(); });
+  })();
+</script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,400..800&family=Instrument+Sans:wght@400..700&display=swap">
 <style>
+  :root {
+    color-scheme: light;
+    --paper: #eee9df; --surface: #f8f5ef; --ink: #1c1a16; --muted: #625b4f; --line: #d9d1c2; --dash: #b8ae9c;
+    --live: #1e7a48; --live-ink: #fff; --focus: #3552e0; --bad: #c0322f;
+    --display: 'Bricolage Grotesque', system-ui, sans-serif;
+    --body: 'Instrument Sans', system-ui, -apple-system, 'Segoe UI', sans-serif;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) { color-scheme: dark; --paper: #17150f; --surface: #221f18; --ink: #f2ede3; --muted: #a69e8f; --line: #35302a; --dash: #5a5345; --live: #4cc784; --live-ink: #10140f; --focus: #8fa2ff; --bad: #f0706b; }
+  }
+  :root[data-theme="dark"] { color-scheme: dark; --paper: #17150f; --surface: #221f18; --ink: #f2ede3; --muted: #a69e8f; --line: #35302a; --dash: #5a5345; --live: #4cc784; --live-ink: #10140f; --focus: #8fa2ff; --bad: #f0706b; }
   * { box-sizing: border-box; }
+  body { margin: 0; background: var(--paper); color: var(--ink); font-family: var(--body); font-variant-numeric: tabular-nums; -webkit-font-smoothing: antialiased; }
+  button, input, select { font: inherit; color: inherit; }
+  :focus-visible { outline: 2px solid var(--focus); outline-offset: 3px; }
+  h1 { margin: 0; font-family: var(--display); font-size: 40px; font-weight: 700; letter-spacing: -0.04em; line-height: 1; }
+  .sub { margin: 8px 0 24px; color: var(--muted); font-size: 15px; }
+  .ink-btn { display: inline-flex; align-items: center; justify-content: center; gap: 8px; height: 44px; padding: 0 22px; border: none; border-radius: 999px; background: var(--ink); color: var(--paper); font-size: 15px; font-weight: 600; cursor: pointer; }
+  .pill-btn { display: inline-flex; align-items: center; justify-content: center; gap: 8px; height: 40px; padding: 0 16px; border: 1px solid var(--line); border-radius: 999px; background: var(--surface); font-size: 14px; font-weight: 600; cursor: pointer; }
+  .pill-btn:hover { border-color: var(--dash); }
+  .seg { display: inline-flex; gap: 4px; padding: 4px; border: 1px solid var(--line); border-radius: 999px; background: var(--surface); max-width: 100%; overflow-x: auto; }
+  .seg button { height: 34px; padding: 0 14px; border: none; border-radius: 999px; background: transparent; color: var(--muted); font-size: 14px; font-weight: 600; cursor: pointer; white-space: nowrap; }
+  .seg button.active, .seg button[aria-pressed="true"] { background: var(--ink); color: var(--paper); }
+  @media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation-duration: .01ms !important; transition-duration: .01ms !important; } }
+</style>
+<style>
   html, body { height: 100%; }
-  body { margin: 0; font-family: 'Figtree', system-ui, sans-serif; background: #17151f; color: #f4f2fa; height: 100dvh; overflow: hidden; padding: 14px 16px; }
+  body { height: 100dvh; overflow: hidden; padding: 16px; }
   .wrap { max-width: 480px; height: 100%; margin: 0 auto; display: flex; flex-direction: column; min-height: 0; }
   .top { display: flex; align-items: center; gap: 10px; }
-  h1 { font-family: 'Bricolage Grotesque', system-ui, sans-serif; font-size: 24px; margin: 0; letter-spacing: -0.5px; flex-grow: 1; }
-  button.restart { border: 1px solid rgba(255,255,255,0.2); background: rgba(255,255,255,0.08); color: #f4f2fa; border-radius: 999px; padding: 7px 16px; font: inherit; font-size: 13px; font-weight: 600; cursor: pointer; }
-  .stats { display: flex; gap: 8px; margin: 10px 0; }
-  .stat { flex: 1; background: rgba(255,255,255,0.08); border: 1px solid rgba(255,255,255,0.12); border-radius: 12px; padding: 6px 4px; text-align: center; }
-  .stat b { display: block; font-size: 17px; font-variant-numeric: tabular-nums; }
-  .stat small { font-size: 11px; color: #8f8aa3; }
+  h1 { flex-grow: 1; font-size: 32px; }
+  button.restart { height: 36px; padding: 0 16px; border: 1px solid var(--line); border-radius: 999px; background: var(--surface); font-size: 13px; font-weight: 600; cursor: pointer; }
+  .stats { display: flex; gap: 8px; margin: 12px 0; }
+  .stat { flex: 1; background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 6px 4px; text-align: center; }
+  .stat b { display: block; font-size: 17px; }
+  .stat small { font-size: 11px; color: var(--muted); }
   .boardwrap { position: relative; flex: 1; min-height: 0; display: flex; }
   .grid { flex: 1; min-height: 0; display: grid; grid-template-columns: repeat(4, 1fr); grid-template-rows: repeat(4, 1fr); gap: 8px; }
-  .card { min-height: 0; border: none; border-radius: 12px; font-size: clamp(20px, 6vmin, 36px); cursor: pointer; background: #2a2740; color: transparent; transition: transform 0.15s, background 0.2s; }
+  .card { min-height: 0; border: none; border-radius: 12px; font-size: clamp(20px, 6vmin, 36px); cursor: pointer; color: transparent;
+    background: linear-gradient(135deg, #a07fff, #5a32e0); transition: transform 0.15s, background 0.2s; }
   .card:hover:not(:disabled) { transform: scale(1.04); }
-  .card.open, .card.done { background: #fff; color: initial; }
-  .card.done { background: #2fc08f; cursor: default; }
+  .card.open, .card.done { background: var(--surface); color: initial; box-shadow: inset 0 0 0 1px var(--line); }
+  .card.done { background: color-mix(in srgb, var(--live) 18%, var(--surface)); box-shadow: inset 0 0 0 2px var(--live); cursor: default; }
   .card:disabled { cursor: default; }
-  .win { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px; text-align: center; background: rgba(23,21,31,0.92); border-radius: 18px; padding: 24px; }
-  .win h2 { margin: 0; font-family: 'Bricolage Grotesque', system-ui, sans-serif; font-size: 28px; }
-  .win p { margin: 0 0 8px; color: #c9c5d6; }
-  button.primary { border: none; border-radius: 999px; padding: 12px 28px; font: inherit; font-weight: 600; font-size: 15px; background: #8b6cff; color: #fff; cursor: pointer; }
+  .win { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px; text-align: center; background: color-mix(in srgb, var(--paper) 94%, transparent); border-radius: 18px; padding: 24px; }
+  .win h2 { margin: 0; font-family: var(--display); font-size: 36px; letter-spacing: -0.03em; }
+  .win p { margin: 0 0 8px; color: var(--muted); }
+  button.primary { height: 48px; padding: 0 28px; border: none; border-radius: 999px; font-weight: 600; font-size: 15px; background: var(--ink); color: var(--paper); cursor: pointer; }
   .card.done.restored { animation: none; }
   .card.done { animation: matched 0.45s cubic-bezier(0.34, 1.56, 0.64, 1); }
   @keyframes matched { 40% { transform: scale(1.1); } }
@@ -39,10 +81,7 @@
   .confetti { position: fixed; inset: 0; pointer-events: none; overflow: hidden; z-index: 10; }
   .confetti i { position: absolute; top: -12px; width: 8px; height: 12px; border-radius: 2px; animation: fall var(--d) cubic-bezier(0.25, 0.6, 0.4, 1) var(--delay) forwards; }
   @keyframes fall { to { transform: translate(var(--x), 105vh) rotate(var(--r)); opacity: 0.9; } }
-  @media (prefers-reduced-motion: reduce) {
-    .card.done, .win:not([hidden]), .win:not([hidden]) > * { animation: none; }
-    .confetti { display: none; }
-  }
+  @media (prefers-reduced-motion: reduce) { .confetti { display: none; } }
   [hidden] { display: none !important; }
 </style>
 </head>

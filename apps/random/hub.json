@@ -1,0 +1,16 @@
+{
+  "manifestVersion": 1,
+  "id": "random",
+  "name": "Random",
+  "description": "Dice, coins, numbers",
+  "category": "Tools",
+  "tags": [
+    "dice",
+    "coin",
+    "number",
+    "pick"
+  ],
+  "icon": "icon.svg",
+  "type": "static",
+  "entry": "dist"
+}

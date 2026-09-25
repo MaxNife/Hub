@@ -26,19 +26,19 @@ export function AppIcon({ kind, size = 76 }: { kind: AppIconKind; size?: number 
       );
     case 'reaction':
       return (
-        <svg viewBox="0 0 72 72" {...s}><defs><linearGradient id="gRx" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stopColor="#FFE066" /><stop offset="1" stopColor="#FF9A1F" /></linearGradient></defs><rect width="72" height="72" rx="18" fill="url(#gRx)" /><circle cx="34" cy="39" r="16" fill="#F0336A" /><circle cx="34" cy="39" r="10" fill="#fff" /><circle cx="34" cy="39" r="4.5" fill="#F0336A" /></svg>
+        <svg viewBox="0 0 64 64" {...s}><defs><linearGradient id="gRx" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stopColor="#FFE066" /><stop offset="1" stopColor="#FF9A1F" /></linearGradient></defs><rect width="64" height="64" rx="16" fill="url(#gRx)" /><circle cx="32" cy="32" r="15" fill="#F0336A" /><circle cx="32" cy="32" r="9.5" fill="#fff" /><circle cx="32" cy="32" r="4.5" fill="#F0336A" /></svg>
       );
     case 'puzzle':
       return (
-        <svg viewBox="0 0 72 72" {...s}><defs><linearGradient id="gPz" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stopColor="#43DDB9" /><stop offset="1" stopColor="#0E8A74" /></linearGradient></defs><rect width="72" height="72" rx="18" fill="url(#gPz)" /><rect x="13" y="13" width="21" height="21" rx="5" fill="#fff" /><rect x="38" y="13" width="21" height="21" rx="5" fill="#FFD34D" /><rect x="13" y="38" width="21" height="21" rx="5" fill="#FF5C8A" /><rect x="38" y="38" width="21" height="21" rx="5" fill="#15395E" /></svg>
+        <svg viewBox="0 0 64 64" {...s}><defs><linearGradient id="gPz" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stopColor="#43DDB9" /><stop offset="1" stopColor="#0E8A74" /></linearGradient></defs><rect width="64" height="64" rx="16" fill="url(#gPz)" /><rect x="12" y="12" width="18" height="18" rx="5" fill="#fff" /><rect x="34" y="12" width="18" height="18" rx="5" fill="#FFD34D" /><rect x="12" y="34" width="18" height="18" rx="5" fill="#FF5C8A" /><rect x="34" y="34" width="18" height="18" rx="5" fill="#15395E" /></svg>
       );
     case 'random':
       return (
-        <svg viewBox="0 0 72 72" {...s}><defs><linearGradient id="gRnd" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stopColor="#8A7DFF" /><stop offset="1" stopColor="#2F3FD0" /></linearGradient></defs><rect width="72" height="72" rx="18" fill="url(#gRnd)" /><rect x="15" y="15" width="42" height="42" rx="10" fill="#fff" /><circle cx="36" cy="36" r="4.5" fill="#2FAE5B" /><circle cx="26" cy="26" r="4.5" fill="#FF5C8A" /><circle cx="46" cy="46" r="4.5" fill="#6C4DF5" /></svg>
+        <svg viewBox="0 0 64 64" {...s}><defs><linearGradient id="gRnd" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stopColor="#8A7DFF" /><stop offset="1" stopColor="#2F3FD0" /></linearGradient></defs><rect width="64" height="64" rx="16" fill="url(#gRnd)" /><rect x="13" y="13" width="38" height="38" rx="9" fill="#fff" /><circle cx="23" cy="23" r="4" fill="#FF5C8A" /><circle cx="32" cy="32" r="4" fill="#2FAE5B" /><circle cx="41" cy="41" r="4" fill="#6C4DF5" /></svg>
       );
     case 'names':
       return (
-        <svg viewBox="0 0 72 72" {...s}><rect width="72" height="72" rx="18" fill="#1F2A44" /><text x="36" y="45" textAnchor="middle" fontFamily="'Bricolage Grotesque Variable', 'Bricolage Grotesque', system-ui, sans-serif" fontWeight="700" fontSize="28" fill="#FFD34D">Aa</text></svg>
+        <svg viewBox="0 0 64 64" {...s}><rect width="64" height="64" rx="16" fill="#1F2A44" /><text x="32" y="41" textAnchor="middle" fontFamily="'Bricolage Grotesque Variable', 'Bricolage Grotesque', system-ui, sans-serif" fontWeight="700" fontSize="26" fill="#FFD34D">Aa</text></svg>
       );
   }
 }

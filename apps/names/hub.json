@@ -1,0 +1,15 @@
+{
+  "manifestVersion": 1,
+  "id": "names",
+  "name": "Name generator",
+  "description": "Project names on demand",
+  "category": "Tools",
+  "tags": [
+    "names",
+    "ideas",
+    "project"
+  ],
+  "icon": "icon.svg",
+  "type": "static",
+  "entry": "dist"
+}

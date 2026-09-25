@@ -1,0 +1,179 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Random</title>
+<script>
+  // Follow Hub's theme choice (same origin, so its setting is readable).
+  (function () {
+    function apply() {
+      try {
+        var t = localStorage.getItem('hub:theme');
+        if (t === 'light' || t === 'dark') document.documentElement.setAttribute('data-theme', t);
+        else document.documentElement.removeAttribute('data-theme');
+      } catch (e) {}
+    }
+    apply();
+    window.addEventListener('storage', function (e) { if (e.key === 'hub:theme') apply(); });
+  })();
+</script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,400..800&family=Instrument+Sans:wght@400..700&display=swap">
+<style>
+  :root {
+    color-scheme: light;
+    --paper: #eee9df; --surface: #f8f5ef; --ink: #1c1a16; --muted: #625b4f; --line: #d9d1c2; --dash: #b8ae9c;
+    --live: #1e7a48; --live-ink: #fff; --focus: #3552e0; --bad: #c0322f;
+    --display: 'Bricolage Grotesque', system-ui, sans-serif;
+    --body: 'Instrument Sans', system-ui, -apple-system, 'Segoe UI', sans-serif;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) { color-scheme: dark; --paper: #17150f; --surface: #221f18; --ink: #f2ede3; --muted: #a69e8f; --line: #35302a; --dash: #5a5345; --live: #4cc784; --live-ink: #10140f; --focus: #8fa2ff; --bad: #f0706b; }
+  }
+  :root[data-theme="dark"] { color-scheme: dark; --paper: #17150f; --surface: #221f18; --ink: #f2ede3; --muted: #a69e8f; --line: #35302a; --dash: #5a5345; --live: #4cc784; --live-ink: #10140f; --focus: #8fa2ff; --bad: #f0706b; }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--paper); color: var(--ink); font-family: var(--body); font-variant-numeric: tabular-nums; -webkit-font-smoothing: antialiased; }
+  button, input, select { font: inherit; color: inherit; }
+  :focus-visible { outline: 2px solid var(--focus); outline-offset: 3px; }
+  h1 { margin: 0; font-family: var(--display); font-size: 40px; font-weight: 700; letter-spacing: -0.04em; line-height: 1; }
+  .sub { margin: 8px 0 24px; color: var(--muted); font-size: 15px; }
+  .ink-btn { display: inline-flex; align-items: center; justify-content: center; gap: 8px; height: 44px; padding: 0 22px; border: none; border-radius: 999px; background: var(--ink); color: var(--paper); font-size: 15px; font-weight: 600; cursor: pointer; }
+  .pill-btn { display: inline-flex; align-items: center; justify-content: center; gap: 8px; height: 40px; padding: 0 16px; border: 1px solid var(--line); border-radius: 999px; background: var(--surface); font-size: 14px; font-weight: 600; cursor: pointer; }
+  .pill-btn:hover { border-color: var(--dash); }
+  .seg { display: inline-flex; gap: 4px; padding: 4px; border: 1px solid var(--line); border-radius: 999px; background: var(--surface); max-width: 100%; overflow-x: auto; }
+  .seg button { height: 34px; padding: 0 14px; border: none; border-radius: 999px; background: transparent; color: var(--muted); font-size: 14px; font-weight: 600; cursor: pointer; white-space: nowrap; }
+  .seg button.active, .seg button[aria-pressed="true"] { background: var(--ink); color: var(--paper); }
+  @media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation-duration: .01ms !important; transition-duration: .01ms !important; } }
+</style>
+<style>
+  body { padding: 28px 16px 40px; }
+  .wrap { max-width: 560px; margin: 0 auto; }
+  .panel { margin-top: 20px; padding: 24px; border: 1px solid var(--line); border-radius: 18px; background: var(--surface); text-align: center; }
+  .result { min-height: 96px; display: flex; align-items: center; justify-content: center; gap: 10px; flex-wrap: wrap; margin-bottom: 18px; }
+  .big { font-family: var(--display); font-size: 64px; font-weight: 700; letter-spacing: -0.04em; line-height: 1; }
+  .die { width: 72px; height: 72px; display: grid; grid-template: repeat(3, 1fr) / repeat(3, 1fr); padding: 10px; border-radius: 16px; background: var(--paper); box-shadow: inset 0 0 0 1px var(--line); }
+  .die i { width: 12px; height: 12px; margin: auto; border-radius: 999px; background: var(--ink); visibility: hidden; }
+  .die i.on { visibility: visible; }
+  .rolling .die, .rolling .big, .rolling .coin { animation: shake .45s ease; }
+  @keyframes shake { 20% { transform: rotate(-12deg) scale(.95); } 50% { transform: rotate(10deg) scale(1.05); } 80% { transform: rotate(-4deg); } }
+  .coin { width: 96px; height: 96px; display: flex; align-items: center; justify-content: center; border-radius: 999px; background: linear-gradient(135deg, #ffe066, #ff9a1f); color: #3a2400; font-family: var(--display); font-size: 20px; font-weight: 700; }
+  .controls { display: flex; align-items: center; justify-content: center; gap: 10px; flex-wrap: wrap; }
+  label { font-size: 14px; color: var(--muted); display: inline-flex; align-items: center; gap: 8px; }
+  input[type=number], select { width: 96px; height: 44px; padding: 0 12px; border: 1px solid var(--line); border-radius: 12px; background: var(--paper); font-size: 16px; }
+  textarea { width: 100%; min-height: 120px; padding: 12px; border: 1px solid var(--line); border-radius: 12px; background: var(--paper); font: inherit; font-size: 15px; resize: vertical; text-align: left; margin-bottom: 12px; }
+  .tally { margin-top: 14px; font-size: 14px; color: var(--muted); }
+  h2 { margin: 32px 0 8px; font-family: var(--display); font-size: 22px; font-weight: 650; letter-spacing: -0.02em; }
+  ol { margin: 0; padding: 0; list-style: none; }
+  ol li { display: flex; justify-content: space-between; gap: 12px; padding: 10px 0; border-top: 1px solid var(--line); font-size: 15px; }
+  ol li:last-child { border-bottom: 1px solid var(--line); }
+  ol li small { color: var(--muted); }
+  [hidden] { display: none !important; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>Random</h1>
+  <p class="sub">Dice, coins, numbers, or pick one from a list.</p>
+  <div class="seg" role="group" aria-label="Mode" id="modes">
+    <button type="button" data-mode="dice">Dice</button>
+    <button type="button" data-mode="coin">Coin</button>
+    <button type="button" data-mode="number">Number</button>
+    <button type="button" data-mode="pick">Pick one</button>
+  </div>
+
+  <section class="panel" id="panel">
+    <div class="result" id="result" aria-live="polite"></div>
+    <div class="controls" data-for="dice"><label>Dice <select id="dice"><option>1</option><option selected>2</option><option>3</option><option>4</option><option>5</option></select></label></div>
+    <div class="controls" data-for="number">
+      <label>From <input id="min" type="number" value="1"></label>
+      <label>to <input id="max" type="number" value="100"></label>
+    </div>
+    <div data-for="pick"><textarea id="list" aria-label="Options, one per line" placeholder="One option per line"></textarea></div>
+    <div class="controls" style="margin-top:14px"><button class="ink-btn" id="go" type="button">Roll</button></div>
+    <p class="tally" id="tally"></p>
+  </section>
+
+  <h2>History</h2>
+  <ol id="history"></ol>
+</div>
+<script>
+(function () {
+  'use strict';
+  var PIPS = { 1: [4], 2: [0, 8], 3: [0, 4, 8], 4: [0, 2, 6, 8], 5: [0, 2, 4, 6, 8], 6: [0, 2, 3, 5, 6, 8] };
+  var mode = 'dice', history = [], coins = { Heads: 0, Tails: 0 };
+  var $ = function (id) { return document.getElementById(id); };
+  function load(key, def) { try { var v = localStorage.getItem(key); return v === null ? def : v; } catch (e) { return def; } }
+  function save(key, v) { try { localStorage.setItem(key, v); } catch (e) {} }
+  $('list').value = load('random:list', 'Pizza\nSushi\nJollof\nTacos');
+  $('list').addEventListener('input', function () { save('random:list', $('list').value); });
+  mode = load('random:mode', 'dice');
+
+  // Crypto-quality randomness where available.
+  function rand(n) {
+    if (window.crypto && crypto.getRandomValues) {
+      var a = new Uint32Array(1), limit = Math.floor(0x100000000 / n) * n;
+      do { crypto.getRandomValues(a); } while (a[0] >= limit);
+      return a[0] % n;
+    }
+    return Math.floor(Math.random() * n);
+  }
+  function esc(s) { var d = document.createElement('div'); d.textContent = s; return d.innerHTML; }
+  function die(v) {
+    var html = '<span class="die" aria-label="' + v + '">';
+    for (var i = 0; i < 9; i++) html += '<i' + (PIPS[v].indexOf(i) >= 0 ? ' class="on"' : '') + '></i>';
+    return html + '</span>';
+  }
+
+  function setMode(m) {
+    mode = m;
+    save('random:mode', m);
+    document.querySelectorAll('[data-mode]').forEach(function (b) { b.setAttribute('aria-pressed', String(b.dataset.mode === m)); });
+    document.querySelectorAll('[data-for]').forEach(function (el) { el.hidden = el.dataset.for !== m; });
+    $('go').textContent = { dice: 'Roll', coin: 'Flip', number: 'Generate', pick: 'Pick one' }[m];
+    $('result').innerHTML = '<span class="big" style="color:var(--dash)">?</span>';
+    $('tally').textContent = m === 'coin' ? 'Heads ' + coins.Heads + ' · Tails ' + coins.Tails : '';
+  }
+
+  function go() {
+    var html, text;
+    if (mode === 'dice') {
+      var n = +$('dice').value, vals = [];
+      for (var i = 0; i < n; i++) vals.push(rand(6) + 1);
+      html = vals.map(die).join('');
+      text = vals.join(' + ') + (n > 1 ? ' = ' + vals.reduce(function (a, b) { return a + b; }, 0) : '');
+      if (n > 1) html += '<span class="big" style="font-size:40px">= ' + vals.reduce(function (a, b) { return a + b; }, 0) + '</span>';
+    } else if (mode === 'coin') {
+      text = rand(2) ? 'Heads' : 'Tails';
+      coins[text]++;
+      html = '<span class="coin">' + text + '</span>';
+      $('tally').textContent = 'Heads ' + coins.Heads + ' · Tails ' + coins.Tails;
+    } else if (mode === 'number') {
+      var lo = Math.ceil(+$('min').value), hi = Math.floor(+$('max').value);
+      if (!isFinite(lo) || !isFinite(hi) || hi < lo) { html = '<span class="sub">Set a range where “to” is at least “from”.</span>'; text = null; }
+      else { text = String(lo + rand(hi - lo + 1)); html = '<span class="big">' + text + '</span>'; }
+    } else {
+      var opts = $('list').value.split('\n').map(function (s) { return s.trim(); }).filter(Boolean);
+      if (!opts.length) { html = '<span class="sub">Add a few options first.</span>'; text = null; }
+      else { text = opts[rand(opts.length)]; html = '<span class="big" style="font-size:44px">' + esc(text) + '</span>'; }
+    }
+    var r = $('result');
+    r.innerHTML = html;
+    $('panel').classList.remove('rolling'); void $('panel').offsetWidth; $('panel').classList.add('rolling');
+    if (text) {
+      history.unshift({ mode: mode, text: text, at: new Date() });
+      history = history.slice(0, 10);
+      $('history').innerHTML = history.map(function (h) {
+        return '<li><span>' + esc(h.text) + '</span><small>' + h.mode + ' · ' + h.at.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', second: '2-digit' }) + '</small></li>';
+      }).join('');
+    }
+  }
+
+  document.querySelectorAll('[data-mode]').forEach(function (b) { b.addEventListener('click', function () { setMode(b.dataset.mode); }); });
+  $('go').addEventListener('click', go);
+  document.addEventListener('keydown', function (e) { if (e.key === 'Enter' && e.target.tagName !== 'TEXTAREA') { e.preventDefault(); go(); } });
+  setMode(mode);
+})();
+</script>
+</body>
+</html>

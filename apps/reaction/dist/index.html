@@ -1,0 +1,138 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Reaction</title>
+<script>
+  // Follow Hub's theme choice (same origin, so its setting is readable).
+  (function () {
+    function apply() {
+      try {
+        var t = localStorage.getItem('hub:theme');
+        if (t === 'light' || t === 'dark') document.documentElement.setAttribute('data-theme', t);
+        else document.documentElement.removeAttribute('data-theme');
+      } catch (e) {}
+    }
+    apply();
+    window.addEventListener('storage', function (e) { if (e.key === 'hub:theme') apply(); });
+  })();
+</script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,400..800&family=Instrument+Sans:wght@400..700&display=swap">
+<style>
+  :root {
+    color-scheme: light;
+    --paper: #eee9df; --surface: #f8f5ef; --ink: #1c1a16; --muted: #625b4f; --line: #d9d1c2; --dash: #b8ae9c;
+    --live: #1e7a48; --live-ink: #fff; --focus: #3552e0; --bad: #c0322f;
+    --display: 'Bricolage Grotesque', system-ui, sans-serif;
+    --body: 'Instrument Sans', system-ui, -apple-system, 'Segoe UI', sans-serif;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) { color-scheme: dark; --paper: #17150f; --surface: #221f18; --ink: #f2ede3; --muted: #a69e8f; --line: #35302a; --dash: #5a5345; --live: #4cc784; --live-ink: #10140f; --focus: #8fa2ff; --bad: #f0706b; }
+  }
+  :root[data-theme="dark"] { color-scheme: dark; --paper: #17150f; --surface: #221f18; --ink: #f2ede3; --muted: #a69e8f; --line: #35302a; --dash: #5a5345; --live: #4cc784; --live-ink: #10140f; --focus: #8fa2ff; --bad: #f0706b; }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--paper); color: var(--ink); font-family: var(--body); font-variant-numeric: tabular-nums; -webkit-font-smoothing: antialiased; }
+  button, input, select { font: inherit; color: inherit; }
+  :focus-visible { outline: 2px solid var(--focus); outline-offset: 3px; }
+  h1 { margin: 0; font-family: var(--display); font-size: 40px; font-weight: 700; letter-spacing: -0.04em; line-height: 1; }
+  .sub { margin: 8px 0 24px; color: var(--muted); font-size: 15px; }
+  .ink-btn { display: inline-flex; align-items: center; justify-content: center; gap: 8px; height: 44px; padding: 0 22px; border: none; border-radius: 999px; background: var(--ink); color: var(--paper); font-size: 15px; font-weight: 600; cursor: pointer; }
+  .pill-btn { display: inline-flex; align-items: center; justify-content: center; gap: 8px; height: 40px; padding: 0 16px; border: 1px solid var(--line); border-radius: 999px; background: var(--surface); font-size: 14px; font-weight: 600; cursor: pointer; }
+  .pill-btn:hover { border-color: var(--dash); }
+  .seg { display: inline-flex; gap: 4px; padding: 4px; border: 1px solid var(--line); border-radius: 999px; background: var(--surface); max-width: 100%; overflow-x: auto; }
+  .seg button { height: 34px; padding: 0 14px; border: none; border-radius: 999px; background: transparent; color: var(--muted); font-size: 14px; font-weight: 600; cursor: pointer; white-space: nowrap; }
+  .seg button.active, .seg button[aria-pressed="true"] { background: var(--ink); color: var(--paper); }
+  @media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation-duration: .01ms !important; transition-duration: .01ms !important; } }
+</style>
+<style>
+  html, body { height: 100%; }
+  body { display: flex; flex-direction: column; padding: 24px 16px; min-height: 100dvh; }
+  .wrap { width: 100%; max-width: 640px; margin: 0 auto; display: flex; flex-direction: column; flex: 1; min-height: 0; }
+  .stats { display: flex; gap: 8px; margin-bottom: 16px; }
+  .stat { flex: 1; padding: 8px 4px; border: 1px solid var(--line); border-radius: 12px; background: var(--surface); text-align: center; }
+  .stat b { display: block; font-size: 18px; }
+  .stat small { font-size: 12px; color: var(--muted); }
+  .pad {
+    flex: 1; min-height: 280px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px;
+    border: none; border-radius: 24px; background: var(--surface); box-shadow: inset 0 0 0 1px var(--line);
+    cursor: pointer; user-select: none; -webkit-tap-highlight-color: transparent; touch-action: manipulation;
+    transition: background-color .12s;
+  }
+  .pad b { font-family: var(--display); font-size: clamp(40px, 9vw, 72px); font-weight: 700; letter-spacing: -0.04em; line-height: 1; }
+  .pad span { color: var(--muted); font-size: 16px; }
+  .pad.wait { background: color-mix(in srgb, var(--bad) 14%, var(--surface)); }
+  .pad.go { background: var(--live); box-shadow: none; }
+  .pad.go b, .pad.go span { color: var(--live-ink); }
+  .pad.early { background: color-mix(in srgb, var(--bad) 22%, var(--surface)); }
+  .history { display: flex; gap: 6px; flex-wrap: wrap; min-height: 32px; margin-top: 14px; }
+  .history span { padding: 4px 10px; border-radius: 999px; background: var(--surface); border: 1px solid var(--line); font-size: 13px; font-weight: 600; }
+  .history span.best { background: var(--ink); color: var(--paper); border-color: var(--ink); }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>Reaction</h1>
+  <p class="sub">Tap the moment it turns green. Five tries make a round.</p>
+  <div class="stats">
+    <div class="stat"><b id="last">–</b><small>Last</small></div>
+    <div class="stat"><b id="avg">–</b><small>Round average</small></div>
+    <div class="stat"><b id="best">–</b><small>Best</small></div>
+  </div>
+  <button class="pad" id="pad" type="button" aria-live="assertive"><b id="big">Tap to start</b><span id="small">Or press Space</span></button>
+  <div class="history" id="history" aria-label="This round"></div>
+</div>
+<script>
+(function () {
+  'use strict';
+  var BEST_KEY = 'reaction:best';
+  var pad = document.getElementById('pad'), big = document.getElementById('big'), small = document.getElementById('small');
+  var state = 'idle', timer = null, shownAt = 0, round = [];
+
+  function best() { try { var v = parseInt(localStorage.getItem(BEST_KEY) || '', 10); return isFinite(v) ? v : null; } catch (e) { return null; } }
+  function paint() {
+    var b = best();
+    document.getElementById('best').textContent = b === null ? '–' : b + ' ms';
+    document.getElementById('last').textContent = round.length ? round[round.length - 1] + ' ms' : '–';
+    document.getElementById('avg').textContent = round.length ? Math.round(round.reduce(function (a, c) { return a + c; }, 0) / round.length) + ' ms' : '–';
+    var low = Math.min.apply(null, round);
+    document.getElementById('history').innerHTML = round.map(function (ms) {
+      return '<span' + (ms === low ? ' class="best"' : '') + '>' + ms + ' ms</span>';
+    }).join('');
+  }
+  function show(cls, b, s) { pad.className = 'pad ' + cls; big.textContent = b; small.textContent = s; }
+
+  function press() {
+    if (state === 'idle' || state === 'result' || state === 'early') {
+      if (round.length >= 5) round = [];
+      state = 'wait';
+      show('wait', 'Wait for green…', 'Don’t tap yet');
+      timer = setTimeout(function () {
+        state = 'go';
+        shownAt = performance.now();
+        show('go', 'Tap!', '');
+      }, 1200 + Math.random() * 2800);
+    } else if (state === 'wait') {
+      clearTimeout(timer);
+      state = 'early';
+      show('early', 'Too soon', 'Tap to try again');
+    } else if (state === 'go') {
+      var ms = Math.round(performance.now() - shownAt);
+      round.push(ms);
+      var b = best();
+      if (b === null || ms < b) { try { localStorage.setItem(BEST_KEY, String(ms)); } catch (e) {} }
+      state = 'result';
+      var done = round.length >= 5;
+      show('', ms + ' ms', done ? 'Round done. Tap for a new round' : 'Tap for try ' + (round.length + 1) + ' of 5');
+      paint();
+    }
+  }
+  pad.addEventListener('pointerdown', function (e) { e.preventDefault(); press(); });
+  pad.addEventListener('keydown', function (e) { if (e.key === ' ' || e.key === 'Enter') { e.preventDefault(); press(); } });
+  document.addEventListener('keydown', function (e) { if (e.key === ' ' && document.activeElement !== pad) { e.preventDefault(); press(); } });
+  paint();
+})();
+</script>
+</body>
+</html>
