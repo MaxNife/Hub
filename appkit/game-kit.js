@@ -1,7 +1,8 @@
 /* Hub game kit — a home screen, settings, sound and music for Hub's games.
  *
- * Source of truth: appkit/game-kit.js. Games load a copy from their own
- * folder (`./game-kit.js`); run `python appkit/sync.py` after editing.
+ * Built on the app kit (settings sheet, storage): games load
+ * `./app-kit.js` first, then `./game-kit.js`. Source of truth: appkit/;
+ * run `python appkit/sync.py` after editing.
  *
  *   const kit = GameKit.create({
  *     id: 'memory', title: 'Memory', tagline: 'Match the pairs', art: '<svg…>',
@@ -19,29 +20,8 @@
 (function () {
   'use strict';
 
-  function el(tag, attrs, kids) {
-    var e = document.createElement(tag);
-    Object.keys(attrs || {}).forEach(function (k) {
-      var v = attrs[k];
-      if (v == null || v === false) return;
-      if (k === 'class') e.className = v;
-      else if (k === 'html') e.innerHTML = v;
-      else if (k.slice(0, 2) === 'on') e.addEventListener(k.slice(2), v);
-      else e.setAttribute(k, v === true ? '' : v);
-    });
-    (kids || []).forEach(function (c) { if (c != null && c !== false) e.append(c.nodeType ? c : document.createTextNode(c)); });
-    return e;
-  }
-  function load(key, def) { try { var v = JSON.parse(localStorage.getItem(key) || 'null'); return v == null ? def : v; } catch (e) { return def; } }
-  function store(key, v) { try { localStorage.setItem(key, JSON.stringify(v)); } catch (e) { /* storage blocked */ } }
-  function ago(ts) {
-    var s = (Date.now() - ts) / 1000;
-    if (s < 90) return 'just now';
-    if (s < 3600) return Math.round(s / 60) + ' min ago';
-    if (s < 86400) return Math.round(s / 3600) + ' hr ago';
-    var d = Math.round(s / 86400);
-    return d === 1 ? 'yesterday' : d + ' days ago';
-  }
+  var el = AppKit.el, load = AppKit.load, store = AppKit.save;
+  var ago = AppKit.ago;
 
   // ─── audio: synthesised, nothing to download ──────────────────────────
   function Audio(getSettings) {
@@ -126,14 +106,39 @@
 
   // ─── the kit ──────────────────────────────────────────────────────────
   function create(cfg) {
-    var SKEY = cfg.id + ':settings', MKEY = cfg.id + ':meta';
-    var defaults = { difficulty: cfg.defaultDifficulty || (cfg.difficulties && cfg.difficulties[0].id), sound: true, music: false, volume: 70 };
-    (cfg.options || []).forEach(function (o) { defaults[o.key] = o.def; });
-    var settings = Object.assign({}, defaults, load(SKEY, {}));
+    var MKEY = cfg.id + ':meta';
+    var app = AppKit.create({
+      id: cfg.id,
+      title: cfg.title,
+      defaults: { difficulty: cfg.defaultDifficulty || (cfg.difficulties && cfg.difficulties[0].id) },
+      fields: [
+        { type: 'heading', label: 'Sound' },
+        { key: 'sound', label: 'Sound effects', type: 'toggle', def: true },
+        { key: 'music', label: 'Music', type: 'toggle', def: false },
+        { key: 'volume', label: 'Volume', type: 'range', def: 70, min: 0, max: 100 },
+      ].concat(cfg.options && cfg.options.length ? [{ type: 'heading', label: 'Game' }] : [], (cfg.options || []).map(function (o) {
+        return { key: o.key, label: o.label, type: 'choice', def: o.def, choices: o.choices };
+      }), [
+        { type: 'heading', label: 'Progress' },
+        { type: 'action', label: 'Stats and best scores', button: 'Reset stats', danger: true, run: function (k, close) {
+          if (!window.confirm('Reset your ' + cfg.title + ' stats and best scores?')) return;
+          if (cfg.onResetStats) cfg.onResetStats();
+          store(MKEY, { played: 0, lastPlayed: 0 });
+          close(); render();
+        } },
+      ]),
+      onChange: function (key) {
+        if (key === 'difficulty') return;
+        if (key === 'volume') audio.volume();
+        else if (key === 'music') audio.music(true);
+        if (key !== 'volume') audio.sfx('tap');
+      },
+    });
+    var settings = app.settings;
     var audio = Audio(function () { return settings; });
     var home = null, playing = false;
 
-    function save() { store(SKEY, settings); }
+    function save() { app.set('difficulty', settings.difficulty); }
     function meta() { return load(MKEY, { played: 0, lastPlayed: 0 }); }
 
     function button(label, cls, onclick, extra) {
@@ -207,51 +212,9 @@
       cfg.onContinue(settings);
     }
 
-    function modal(title, body, actions) {
-      var back = el('div', { class: 'gk-modal-back', onclick: function (e) { if (e.target === back) close(); } });
-      function close() { back.remove(); document.removeEventListener('keydown', esc); }
-      function esc(e) { if (e.key === 'Escape') { e.stopPropagation(); close(); } }
-      document.addEventListener('keydown', esc);
-      back.append(el('div', { class: 'gk-modal', role: 'dialog', 'aria-label': title }, [el('h2', {}, [title]), body,
-        el('div', { class: 'gk-row' }, (actions || []).concat([button('Done', 'gk-primary small', close)]))]));
-      document.body.append(back);
-      var f = back.querySelector('button, input');
-      if (f) f.focus();
-      return close;
-    }
-    function toggle(label, key, after) {
-      var input = el('input', { type: 'checkbox', role: 'switch' });
-      input.checked = !!settings[key];
-      input.addEventListener('change', function () { audio.unlock(); settings[key] = input.checked; save(); if (after) after(); audio.sfx('tap'); });
-      return el('label', { class: 'gk-toggle' }, [el('span', {}, [label]), input]);
-    }
-    function openSettings() {
-      var vol = el('input', { type: 'range', min: 0, max: 100, value: settings.volume, 'aria-label': 'Volume' });
-      vol.addEventListener('input', function () { settings.volume = +vol.value; save(); audio.volume(); });
-      vol.addEventListener('change', function () { audio.sfx('tap'); });
-      var opts = (cfg.options || []).map(function (o) {
-        return el('div', { class: 'gk-field' }, [el('span', {}, [o.label]), el('div', { class: 'gk-seg', role: 'group', 'aria-label': o.label }, o.choices.map(function (c) {
-          return el('button', { type: 'button', 'aria-pressed': String(settings[o.key] === c[0]), onclick: function (e) {
-            settings[o.key] = c[0]; save(); audio.sfx('tap');
-            e.target.parentNode.querySelectorAll('button').forEach(function (b) { b.setAttribute('aria-pressed', String(b === e.target)); });
-          } }, [c[1]]);
-        }))]);
-      });
-      var body = el('div', { class: 'gk-settings' }, [
-        toggle('Sound effects', 'sound'),
-        toggle('Music', 'music', function () { audio.music(true); }),
-        el('label', { class: 'gk-field' }, [el('span', {}, ['Volume']), vol]),
-      ].concat(opts));
-      var reset = button('Reset stats', 'gk-link danger', function () {
-        if (!window.confirm('Reset your ' + cfg.title + ' stats and best scores?')) return;
-        if (cfg.onResetStats) cfg.onResetStats();
-        store(MKEY, { played: 0, lastPlayed: 0 });
-        close(); render();
-      });
-      var close = modal('Settings', body, [reset]);
-    }
+    function openSettings() { audio.unlock(); app.openSettings(); }
     function openHowTo() {
-      modal('How to play', el('ol', { class: 'gk-how' }, cfg.howTo.map(function (s) { return el('li', {}, [s]); })));
+      AppKit.modal('How to play', el('ol', { class: 'gk-how' }, cfg.howTo.map(function (s) { return el('li', {}, [s]); })));
     }
 
     // Menu button for the game's own top bar: pause and go home.
@@ -260,7 +223,7 @@
         html: '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 7h16M4 12h16M4 17h10"/></svg><span>Menu</span>' });
     }
     document.addEventListener('keydown', function (e) {
-      if (e.key === 'Escape' && playing && !document.querySelector('.gk-modal-back')) showHome();
+      if (e.key === 'Escape' && playing && !document.querySelector('.ak-modal-back')) showHome();
     });
     document.addEventListener('visibilitychange', function () { if (document.hidden && playing && cfg.onPause) cfg.onPause(); });
 
