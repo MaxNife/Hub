@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { Link, useNavigate, useParams } from 'react-router-dom';
+import { Link, useLocation, useNavigate, useParams } from 'react-router-dom';
 import { useShell } from '../shell-context';
 import { api } from '../api';
 import { categoryColor, plural } from '../data';
@@ -266,6 +266,7 @@ export function RecentPage() {
 
 export function OpenApp() {
   const { id = '' } = useParams();
+  const { hash } = useLocation(); // passed through to the app (#continue, #new)
   const nav = useNavigate();
   const { apps, status } = useApps();
   const { refetch } = useLiveApps();
@@ -356,7 +357,7 @@ export function OpenApp() {
         key={id}
         className="appframe-full"
         title={name}
-        src={`/apps/${id}/`}
+        src={`/apps/${id}/${hash}`}
         onLoad={() => setFrameDone(true)}
       />
       {!gone && (

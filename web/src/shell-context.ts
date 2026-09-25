@@ -9,7 +9,7 @@ export interface Shell {
   openMenu: () => void;
   openSearch: () => void;
   // Opens an app; `from` is the clicked icon, which morphs into the splash.
-  launch: (id: string, from?: Element | null) => void;
+  launch: (id: string, from?: Element | null, hash?: string) => void;
   toast: (text: string, action?: ToastAction) => void;
 }
 

@@ -64,8 +64,9 @@ function Shell() {
 
   // Launch: the clicked icon morphs into the splash icon via the View
   // Transitions API where available; plain navigation otherwise.
-  const launch = useCallback((id: string, from?: Element | null) => {
-    const go = () => nav(`/open/${id}`);
+  // `hash` is handed to the app, e.g. '#continue' resumes a saved game.
+  const launch = useCallback((id: string, from?: Element | null, hash = '') => {
+    const go = () => nav(`/open/${id}${hash}`);
     if (!document.startViewTransition || reducedMotion() || !(from instanceof HTMLElement || from instanceof SVGElement)) {
       go();
       return;
