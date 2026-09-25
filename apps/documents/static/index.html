@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Documents</title>
+<script>
+  // Follow Hub's theme choice (same origin, so its setting is readable).
+  (function () {
+    function apply() {
+      try {
+        var t = localStorage.getItem('hub:theme');
+        if (t === 'light' || t === 'dark') document.documentElement.setAttribute('data-theme', t);
+        else document.documentElement.removeAttribute('data-theme');
+      } catch (e) {}
+    }
+    apply();
+    window.addEventListener('storage', function (e) { if (e.key === 'hub:theme') apply(); });
+  })();
+</script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,400..800&family=Instrument+Sans:wght@400..700&display=swap">
+<link rel="stylesheet" href="./app.css">
+</head>
+<body>
+<main id="app"></main>
+<script src="./app.js"></script>
+</body>
+</html>
