@@ -19,15 +19,18 @@ with a `hub.json` into `apps/` and it shows up. See
 - `internal/spa/`, `internal/logging/`, `internal/maint/` — shell serving, logs, daily housekeeping
 - `web/` — React + TS frontend (embedded in the binary)
 - `apps/` — the apps: Converter, Meal picker, Memory, Reaction, Puzzle,
-  Random, Name generator (static); Football, Transcribe (service)
-- `appkit/` — theme snippet static apps copy so they match Hub
+  Random, Name generator (static); Football, Transcribe, Documents (service)
+- `appkit/` — theme snippet for static apps, and the game kit (home
+  screen, settings, sound) the games share
 - `data/` — `hub.db`, logs, backups (git-ignored)
 
 ## Prerequisites
 
 - Go 1.25+ and Node 20+
 - Python 3.10+ for the service apps (Football needs nothing else;
-  Transcribe needs `pip install -r apps/transcribe/requirements.txt`)
+  Transcribe needs `pip install -r apps/transcribe/requirements.txt`;
+  Documents needs `pip install -r apps/documents/requirements.txt`, plus
+  LibreOffice for Word/Excel/PowerPoint → PDF)
 
 > Windows note: Smart App Control in enforced mode blocks the freshly built
 > unsigned `hub.exe`. During development run the server with
@@ -47,6 +50,7 @@ go run ./cmd/hub
 # service apps, each in its own terminal (or NSSM / systemd in production)
 python apps/football/server.py      # :8101
 python apps/transcribe/server.py    # :8102
+python apps/documents/server.py     # :8103
 ```
 
 Hub checks service apps every 30 seconds; a stopped one gets a red dot and
@@ -86,6 +90,8 @@ your tailnet. To serve HTTPS directly instead, set `HUB_TLS_CERT` and
 ```powershell
 go test ./...                                   # server packages
 python -m unittest apps/football/test_server.py apps/transcribe/test_server.py
+python -m unittest discover apps/documents
+python appkit/sync.py --check    # games carry the current game kit
 node e2e.cjs     # hub must be running on :8080 from the repo root, no password set
 cd web; npm.cmd run lint; npx tsc -b
 ```

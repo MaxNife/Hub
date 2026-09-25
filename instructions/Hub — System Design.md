@@ -120,7 +120,7 @@ Pick `static` whenever an app can run entirely in the browser; use `service` onl
 |  | Static app | Service app |
 | --- | --- | --- |
 | What it is | Built HTML/JS/CSS files | Its own HTTP server, any language |
-| Examples | Memory, Reaction, Puzzle, Converter, Meal picker, Random | Football, Transcribe |
+| Examples | Memory, Reaction, Puzzle, Converter, Meal picker, Random | Football, Transcribe, Documents |
 | Who serves it | Hub, from `apps/{id}/{entry}` | The app; Hub reverse-proxies to `upstream` |
 | Who starts it | Nobody, it's files | You (v1), via NSSM, Docker or a script |
 | Health | Always up if the files exist | Hub polls `health` every 30 s |
@@ -133,6 +133,10 @@ Pick `static` whenever an app can run entirely in the browser; use `service` onl
 - Answer `GET /health` with `200` within 3 seconds when it's working.
 - Keep long work (a 20-minute transcription) off the request: accept the job, return a job id, let the UI poll for progress.
 - Keep its own secrets (API keys) in its own environment, never in `hub.json`.
+
+**Games.** Memory, Reaction and Puzzle share a game kit (`appkit/game-kit.js`, copied into each game by `appkit/sync.py`): a home screen with Continue, New game, difficulty and stats, and settings for sound effects, music, volume and game options. Each game saves the game in progress in its own keys (`memory:progress`, `reaction:round`, `puzzle:save`). Hub opens a game at `#continue` or `#new`: `/open/{id}#continue` passes the hash to the iframe, which is how Home's Resume button reopens a Memory game where it was left.
+
+**Documents** (`apps/documents`, Python, :8103) is an all-in-one PDF tool in the spirit of iLovePDF: merge, split, remove and reorder pages, rotate, compress, page numbers, watermarks, passwords; convert images ↔ PDF, Word/Excel/PowerPoint → PDF (LibreOffice), PDF → Word (pdf2docx) and text; and a page editor for text, whiteout, highlight, drawing, images, signatures and true redaction (PyMuPDF). Files are processed on the Hub machine and deleted after two hours.
 
 ## Hub backend (Go)
 
@@ -343,7 +347,7 @@ Eight milestones, each ending in something you can open and use. Every milestone
 
 The remaining games and tools (Reaction, Puzzle, Random, Names) can be added any time after M2, since they're just more static apps.
 
-**Status (Sep 2026):** M0–M7 are built, along with Reaction, Puzzle, Random and Names. Football uses ESPN's public scoreboard feed (no key); Transcribe uses faster-whisper locally.
+**Status (Sep 2026):** M0–M7 are built, along with Reaction, Puzzle, Random, Names, Documents and the game kit. Football uses ESPN's public scoreboard feed (no key); Transcribe uses faster-whisper locally.
 
 ## Later: widgets, quick actions, AI
 

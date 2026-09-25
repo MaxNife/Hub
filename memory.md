@@ -1,6 +1,6 @@
 # Hub — build progress (memory)
 
-Updated 25 Sep 2026. Stack: Go backend + React/TS frontend + SQLite, Python service apps. Status: **M0–M7 built**, plus the four extra static apps. Server on `http://127.0.0.1:8080`.
+Updated 25 Sep 2026. Stack: Go backend + React/TS frontend + SQLite, Python service apps. Status: **M0–M7 built**, plus the four extra static apps, Documents and the game kit. Server on `http://127.0.0.1:8080`.
 
 ## Built
 
@@ -11,8 +11,10 @@ Updated 25 Sep 2026. Stack: Go backend + React/TS frontend + SQLite, Python serv
 - **M6 auth**: bcrypt hash in `HUB_PASSWORD_HASH`, 30-day sessions (SHA-256 of token stored), middleware on `/api` + `/apps`, `X-Hub-Request: 1` required on every API write (even without a password), 5 failures → 1-minute lockout, refuses non-loopback `HUB_ADDR` without a hash, optional `HUB_TLS_CERT/KEY`. Login screen in the shell; Sign out in Settings.
 - **M7 Transcribe** (`apps/transcribe`, Python, :8102): raw-body upload, SQLite job table, one worker thread, faster-whisper with progress from segment timestamps, restart re-queues running jobs, jobs wait if the engine isn't installed, `.txt`/`.srt`/`.vtt` downloads.
 - **Frontend**: design from `instructions/mockups/` (paper/ink tokens, Instrument Sans + Bricolage, light sidebar, 104 px greeting, search box, Today rows, Your apps, Football settings, Weather and calendar settings, login). `web/src/api.ts` adds the CSRF header and turns a 401 into the login screen. Memory saves `memory:progress` so Resume restores a game.
+- **Documents** (`apps/documents`, Python, :8103): PyMuPDF engine in `tools.py` (merge, split, remove, organize, rotate, compress, images→PDF, Office→PDF via LibreOffice headless, PDF→images/Word/text, page numbers, watermark, edit ops incl. real redaction, protect/unlock); `server.py` stores files under `data/files/<id>/` for 2 h; UI in `static/` (tool grid, organize, full-screen editor with signatures). Needs `pip install -r apps/documents/requirements.txt`; LibreOffice needs Writer/Calc/Impress, not just core.
+- **Game kit** (`appkit/game-kit.*`, synced into games with `python appkit/sync.py`): home screen with Continue/New game/difficulty/stats, settings (sound, music, volume, options), Web Audio SFX and music, `#continue`/`#new` deep links. Memory: 6/8/12 pairs, face sets; Reaction: relaxed/classic/hard (amber decoys), 3/5/10 tries; Puzzle: 3×3/4×4/5×5, numbers or colours. Hub's `launch(id, from, hash)` passes the hash through to the iframe.
 - **Static apps**: Converter, Meal picker, Memory, Reaction, Puzzle, Random, Name generator — all use `appkit/theme-head.html` (Hub tokens, follows `hub:theme`).
-- **Tests**: `go test ./...`; `python -m unittest apps/football/test_server.py apps/transcribe/test_server.py` (fake ESPN, fake speech engine); `node e2e.cjs` 17/17 (adds service proxy/health/offline, CSRF, status/settings, all static apps).
+- **Tests**: `go test ./...`; `python -m unittest apps/football/test_server.py apps/transcribe/test_server.py` (fake ESPN, fake speech engine); `python -m unittest discover apps/documents` (17, real files); `python appkit/sync.py --check`; `node e2e.cjs` (adds service proxy/health/offline, CSRF, status/settings, all static apps, game kit).
 
 ## Not verifiable in the cloud sandbox
 
@@ -21,7 +23,7 @@ ESPN, Open-Meteo and Hugging Face were blocked there, so live football data, rea
 ## How to run
 
 - Backend: `go run ./cmd/hub` (needs `web/dist`: `cd web; npm.cmd run build`). Frontend dev: `cd web; npm.cmd run dev`. Build: `.\build.ps1`. Tests: see README.
-- Service apps: `python apps/football/server.py`, `python apps/transcribe/server.py` (after `pip install -r apps/transcribe/requirements.txt`; first run downloads the Whisper model, `TRANSCRIBE_MODEL` defaults to `small`).
+- Service apps: `python apps/football/server.py`, `python apps/documents/server.py`, `python apps/transcribe/server.py` (after `pip install -r apps/transcribe/requirements.txt`; first run downloads the Whisper model, `TRANSCRIBE_MODEL` defaults to `small`).
 - Go toolchain: system Go at `C:\Program Files\Go\bin\go.exe`; `.tools/` holds only `GO_LOCATION.md` — **do not re-download a local toolchain**.
 
 ## Environment gotchas
