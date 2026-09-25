@@ -1,0 +1,12 @@
+{
+  "manifestVersion": 1,
+  "id": "transcribe",
+  "name": "Transcribe",
+  "description": "Audio to text",
+  "category": "Media",
+  "tags": ["audio", "speech", "whisper", "subtitles"],
+  "icon": "icon.svg",
+  "type": "service",
+  "upstream": "http://127.0.0.1:8102",
+  "health": "/health"
+}

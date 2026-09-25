@@ -22,7 +22,7 @@ export function AppIcon({ kind, size = 76 }: { kind: AppIconKind; size?: number 
       );
     case 'transcribe':
       return (
-        <svg viewBox="0 0 72 72" {...s}><defs><linearGradient id="gTr" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stopColor="#16345C" /><stop offset="1" stopColor="#0A1A30" /></linearGradient></defs><rect width="72" height="72" rx="18" fill="url(#gTr)" /><rect x="27" y="11" width="18" height="30" rx="9" fill="#fff" /><path d="M21 33a15 15 0 0 0 30 0M36 48v10" fill="none" stroke="#6FDBFF" strokeWidth="3.5" strokeLinecap="round" /></svg>
+        <svg viewBox="0 0 64 64" {...s}><defs><linearGradient id="gTr" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stopColor="#274B7A" /><stop offset="1" stopColor="#0B1B33" /></linearGradient></defs><rect width="64" height="64" rx="16" fill="url(#gTr)" /><rect x="24" y="12" width="16" height="26" rx="8" fill="#fff" /><path d="M18 30a14 14 0 0 0 28 0M32 44v8" fill="none" stroke="#6FDBFF" strokeWidth="4" strokeLinecap="round" /></svg>
       );
     case 'reaction':
       return (
