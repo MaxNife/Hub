@@ -6,19 +6,19 @@ export function AppIcon({ kind, size = 76 }: { kind: AppIconKind; size?: number 
   switch (kind) {
     case 'football':
       return (
-        <svg viewBox="0 0 72 72" {...s}><defs><linearGradient id="gFb" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stopColor="#2DBA5E" /><stop offset="1" stopColor="#0A6630" /></linearGradient></defs><rect width="72" height="72" rx="18" fill="url(#gFb)" /><circle cx="36" cy="33" r="18" fill="#fff" /><path d="M36 25l7.6 5.5-2.9 9h-9.4l-2.9-9z" fill="#1A1820" /></svg>
+        <svg viewBox="0 0 64 64" {...s}><defs><linearGradient id="gFb" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stopColor="#36C572" /><stop offset="1" stopColor="#0E6B39" /></linearGradient></defs><rect width="64" height="64" rx="16" fill="url(#gFb)" /><circle cx="32" cy="32" r="15" fill="none" stroke="#fff" strokeWidth="4" /><path d="M32 25.5l6.2 4.5-2.4 7.3h-7.6L25.8 30z" fill="#fff" /><path d="M32 25.5V18M38.2 30l7.2-2.3M35.8 37.3l4.4 6M28.2 37.3l-4.4 6M25.8 30l-7.2-2.3" stroke="#fff" strokeWidth="3" strokeLinecap="round" /></svg>
       );
     case 'memory':
       return (
-        <svg viewBox="0 0 72 72" {...s}><defs><linearGradient id="gMem" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stopColor="#8E6BFF" /><stop offset="1" stopColor="#4326D6" /></linearGradient></defs><rect width="72" height="72" rx="18" fill="url(#gMem)" /><rect x="13" y="17" width="26" height="36" rx="5" fill="#FFD34D" /><rect x="32" y="20" width="26" height="36" rx="5" fill="#fff" /><path d="M45 30l6 8-6 8-6-8z" fill="#FF4F7B" /></svg>
+        <svg viewBox="0 0 64 64" {...s}><defs><linearGradient id="gMem" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stopColor="#A07FFF" /><stop offset="1" stopColor="#5A32E0" /></linearGradient></defs><rect width="64" height="64" rx="16" fill="url(#gMem)" /><rect x="15" y="20" width="19" height="27" rx="4" fill="#fff" fillOpacity="0.5" transform="rotate(-12 24.5 33.5)" /><rect x="28" y="16" width="19" height="27" rx="4" fill="#fff" transform="rotate(8 37.5 29.5)" /></svg>
       );
     case 'meal':
       return (
-        <svg viewBox="0 0 72 72" {...s}><defs><linearGradient id="gMeal" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stopColor="#FFC45A" /><stop offset="1" stopColor="#FF7A1A" /></linearGradient></defs><rect width="72" height="72" rx="18" fill="url(#gMeal)" /><circle cx="36" cy="37" r="21" fill="#fff" /><ellipse cx="32" cy="38" rx="10" ry="7.5" fill="#E8431C" /></svg>
+        <svg viewBox="0 0 64 64" {...s}><defs><linearGradient id="gMeal" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stopColor="#FFB443" /><stop offset="1" stopColor="#FF5E1F" /></linearGradient></defs><rect width="64" height="64" rx="16" fill="url(#gMeal)" /><path d="M22 16v10a5 5 0 0 0 10 0V16M27 16v32M43 48V16c-4 2-6 8-6 15h6" fill="none" stroke="#fff" strokeWidth="4.5" strokeLinecap="round" strokeLinejoin="round" /></svg>
       );
     case 'converter':
       return (
-        <svg viewBox="0 0 72 72" {...s}><defs><linearGradient id="gConv" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stopColor="#4C86FF" /><stop offset="1" stopColor="#1B3FB0" /></linearGradient></defs><rect width="72" height="72" rx="18" fill="url(#gConv)" /><path d="M16 27h36M43 18l9 9-9 9" fill="none" stroke="#FFD34D" strokeWidth="6" strokeLinecap="round" strokeLinejoin="round" /><path d="M56 46H20M29 37l-9 9 9 9" fill="none" stroke="#fff" strokeWidth="6" strokeLinecap="round" strokeLinejoin="round" /></svg>
+        <svg viewBox="0 0 64 64" {...s}><defs><linearGradient id="gConv" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stopColor="#5A8DFF" /><stop offset="1" stopColor="#2146C9" /></linearGradient></defs><rect width="64" height="64" rx="16" fill="url(#gConv)" /><path d="M18 25h26m-7-7 7 7-7 7M46 39H20m7-7-7 7 7 7" fill="none" stroke="#fff" strokeWidth="4.5" strokeLinecap="round" strokeLinejoin="round" /></svg>
       );
     case 'transcribe':
       return (
