@@ -40,6 +40,8 @@ export const IconCalendar = (p: P) => <Svg {...p}><rect x="4" y="5" width="16" h
 export const IconSliders = (p: P) => <Svg {...p}><path d="M4 7h10M18 7h2M4 17h4M12 17h8" /><circle cx="16" cy="7" r="2" /><circle cx="10" cy="17" r="2" /></Svg>;
 export const IconChevronLeft = (p: P) => <Svg strokeWidth="2" {...p}><path d="m15 5-7 7 7 7" /></Svg>;
 export const IconChevronRight = (p: P) => <Svg strokeWidth="2" {...p}><path d="m9 5 7 7-7 7" /></Svg>;
+export const IconChevronUp = (p: P) => <Svg strokeWidth="2" {...p}><path d="m5 15 7-7 7 7" /></Svg>;
+export const IconChevronDown = (p: P) => <Svg strokeWidth="2" {...p}><path d="m5 9 7 7 7-7" /></Svg>;
 export const IconClose = (p: P) => <Svg strokeWidth="2.2" {...p}><path d="M6 6l12 12M18 6 6 18" /></Svg>;
 
 export function BrandMark({ size = 26 }: { size?: number }) {

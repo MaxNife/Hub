@@ -4,15 +4,19 @@ import { plural } from '../data';
 import { AppIcon } from '../components/AppIcon';
 import { AppGlyph, AppTile, SkeletonGrid } from '../components/ui';
 import {
-  IconChevronLeft, IconChevronRight, IconPlay, IconPlus, IconSearch, IconShuffle, IconSliders, Shield,
+  IconCalendar, IconChevronLeft, IconChevronRight, IconCloud, IconPlay, IconPlus, IconRefresh, IconSearch, IconShuffle,
+  IconSliders, Shield,
 } from '../components/Icons';
 import { useCommands } from '../commands';
-import { footballFeed, useFootballSettings, type FeedMode } from '../football';
-import { useApps, type TileApp } from '../live';
+import { centerText, detailText, minuteText, pillLabel, useFootballFeed, useFootballSettings } from '../football';
+import { api } from '../api';
+import { useQueryClient } from '@tanstack/react-query';
+import { healthBadge, useApps, type TileApp } from '../live';
 import { inSentence, rerollMeal, useMealPick } from '../meal';
 import { fmtSecs, useMemoryBest, useMemoryProgress } from '../memory';
 import { useShell } from '../shell-context';
 import { stagger } from '../motion';
+import { eventText, tempText, useStatus } from '../status';
 
 function greeting(date: Date) {
   const h = date.getHours();
@@ -122,12 +126,44 @@ function HomeSearch() {
   );
 }
 
-const PILL: Record<FeedMode, string> = { live: 'Live', results: 'Full time', fixtures: 'Up next' };
-
-function FootballRow({ now }: { now: Date }) {
+function FootballRow({ now, app }: { now: Date; app?: TileApp }) {
   const [settings] = useFootballSettings();
-  const feed = footballFeed(settings, now);
+  const source = useFootballFeed(settings, app, now);
+  const qc = useQueryClient();
   const [raw, setRaw] = useState(0);
+  const [checking, setChecking] = useState(false);
+
+  if (source.kind === 'offline' || source.kind === 'error' || source.kind === 'loading') {
+    const retry = async () => {
+      setChecking(true);
+      await api('/api/apps/football/check', { method: 'POST' }).catch(() => {});
+      await qc.invalidateQueries({ queryKey: ['apps'] });
+      await qc.invalidateQueries({ queryKey: ['football-feed'] });
+      setChecking(false);
+    };
+    return (
+      <div className="today-row">
+        <RowIcon app={app} kind="football" />
+        <div>
+          <p className="row-title">
+            {source.kind === 'loading' ? 'Checking the scores…' : source.kind === 'offline' ? 'Football is offline' : 'No scores right now'}
+          </p>
+          <p className="row-sub">
+            {source.kind === 'offline'
+              ? 'Its service isn’t answering. Start it, then retry.'
+              : source.kind === 'error' ? source.message : 'One moment.'}
+          </p>
+        </div>
+        {source.kind !== 'loading' && (
+          <button type="button" className="pill-btn" onClick={retry} disabled={checking}>
+            <IconRefresh size={16} className={checking ? 'spin' : ''} /><span className="d-only">{checking ? 'Checking…' : 'Retry'}</span>
+          </button>
+        )}
+      </div>
+    );
+  }
+
+  const { feed } = source;
   const n = feed.matches.length;
   const idx = n ? ((raw % n) + n) % n : 0;
   const match = feed.matches[idx];
@@ -135,7 +171,7 @@ function FootballRow({ now }: { now: Date }) {
   if (!match) {
     return (
       <div className="today-row">
-        <RowIcon kind="football" />
+        <RowIcon app={app} kind="football" />
         <div>
           <p className="row-title">No matches to show</p>
           <p className="row-sub">Pick some leagues or clubs for the Football widget.</p>
@@ -145,6 +181,7 @@ function FootballRow({ now }: { now: Date }) {
     );
   }
 
+  const minute = minuteText(match);
   return (
     <div
       className="today-row football-row"
@@ -156,25 +193,27 @@ function FootballRow({ now }: { now: Date }) {
         if (e.key === 'ArrowRight') setRaw(idx + 1);
       }}
     >
-      <RowIcon kind="football" />
+      <RowIcon app={app} kind="football" />
       <div className="fb-body">
         <div className="fb-meta">
           <span className={`fb-pill ${feed.mode}`}>
-            {PILL[feed.mode]}
-            {match.minute && <span className="m-only">&nbsp;{match.minute}</span>}
+            {pillLabel(feed.mode)}
+            {minute && <span className="m-only">&nbsp;{minute}</span>}
           </span>
           <span>{match.league}</span>
           <span className="d-only">{feed.note}</span>
-          <span className="fb-sample" title="Real scores arrive with the Football app">Sample data</span>
+          {source.kind === 'sample' && (
+            <span className="fb-sample" title="Install the Football app for real scores">Sample data</span>
+          )}
         </div>
         <div className="fb-teams" key={`${feed.mode}-${idx}`} aria-live="polite">
           <Shield color={match.home.color} code={match.home.code} />
           <span className="fb-team">{match.home.name}</span>
-          <span className={`fb-center${feed.mode === 'fixtures' ? ' soft' : ''}`}>{match.center}</span>
+          <span className={`fb-center${match.state === 'pre' ? ' soft' : ''}`}>{centerText(match)}</span>
           <span className="fb-team">{match.away.name}</span>
           <Shield color={match.away.color} code={match.away.code} />
         </div>
-        <p className="row-sub d-only">{match.detail}</p>
+        <p className="row-sub d-only">{detailText(match, now)}</p>
         <div className="fb-nav-m m-only">
           <Dots n={n} idx={idx} />
           <button type="button" className="icon-btn" onClick={() => setRaw(idx + 1)} aria-label="Next match">
@@ -289,7 +328,7 @@ function YourApps({ apps, loading }: { apps: TileApp[]; loading: boolean }) {
               app={a}
               index={i}
               sub={a.description || a.category}
-              badge={(a.id === 'memory' && progress) || a.running ? 'running' : undefined}
+              badge={a.id === 'memory' && progress ? 'running' : healthBadge(a)}
             />
           ))}
           <div className="app-tile add-tile" style={stagger(shown.length)}>
@@ -304,6 +343,30 @@ function YourApps({ apps, loading }: { apps: TileApp[]; loading: boolean }) {
         </div>
       )}
     </section>
+  );
+}
+
+// Weather and next event from /api/status. A provider that's configured
+// but failing shows a dash; an unset weather location offers to set one.
+function StatusItems() {
+  const { data } = useStatus();
+  if (!data) return null;
+  const { weather, nextEvent } = data;
+  return (
+    <>
+      {weather.configured ? (
+        <Link to="/settings/status" className="status-item" title={weather.value ? `${weather.value.place}: high ${weather.value.high}°, low ${weather.value.low}°` : weather.error}>
+          <IconCloud size={16} />{weather.value ? `${tempText(weather.value)} ${weather.value.label}` : '—'}
+        </Link>
+      ) : (
+        <Link to="/settings/status" className="status-item d-only faint">Add weather</Link>
+      )}
+      {nextEvent.configured && (nextEvent.value || nextEvent.error) && (
+        <Link to="/settings/status" className="status-item d-only" title={nextEvent.value?.location ?? nextEvent.error}>
+          <IconCalendar size={16} />{nextEvent.value ? eventText(nextEvent.value) : '—'}
+        </Link>
+      )}
+    </>
   );
 }
 
@@ -322,6 +385,7 @@ export function Home() {
         <span>{dateStr}</span>
         <div className="home-status-right">
           <span>{timeStr}</span>
+          <StatusItems />
           {status === 'demo' && <span className="ready d-only"><span className="dot warn" />Demo data</span>}
           {status === 'live' && (
             <span className="ready d-only">
@@ -335,7 +399,7 @@ export function Home() {
       <HomeSearch />
 
       <section className="today" aria-label="Today">
-        <FootballRow now={now} />
+        <FootballRow now={now} app={status === 'live' ? find('football') : undefined} />
         {(status !== 'live' || find('meal-picker')) && <MealRow app={find('meal-picker')} />}
         {(status !== 'live' || find('memory')) && <MemoryRow app={find('memory')} />}
       </section>

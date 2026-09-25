@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { flushSync } from 'react-dom';
 import { BrowserRouter, Link, Route, Routes, useLocation, useNavigate } from 'react-router-dom';
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { QueryClient, QueryClientProvider, useQueryClient } from '@tanstack/react-query';
 import { ShellProvider, reducedMotion, type ToastAction } from './shell-context';
 import { Sidebar } from './components/Sidebar';
 import { CommandPalette } from './components/CommandPalette';
@@ -9,6 +9,10 @@ import { BrandMark, IconMenu } from './components/Icons';
 import { Home } from './pages/Home';
 import { AllApps, Category, Favorites, OpenApp, RecentPage, Settings } from './pages/pages';
 import { FootballSettings } from './pages/FootballSettings';
+import { StatusSettings } from './pages/StatusSettings';
+import { Login } from './pages/Login';
+import { UNAUTHORIZED } from './api';
+import { useSession } from './session';
 
 const qc = new QueryClient();
 
@@ -99,6 +103,7 @@ function Shell() {
               <Route path="/open/:id" element={<OpenApp />} />
               <Route path="/settings" element={<Settings />} />
               <Route path="/settings/football" element={<FootballSettings />} />
+              <Route path="/settings/status" element={<StatusSettings />} />
               <Route path="/favorites" element={<Favorites />} />
               <Route path="/recent" element={<RecentPage />} />
             </Routes>
@@ -125,11 +130,25 @@ function Shell() {
   );
 }
 
+// Password gate: the shell only renders once Hub is happy with the session.
+function Gate() {
+  const client = useQueryClient();
+  const { data, isPending } = useSession();
+  useEffect(() => {
+    const onUnauthorized = () => client.invalidateQueries({ queryKey: ['session'] });
+    window.addEventListener(UNAUTHORIZED, onUnauthorized);
+    return () => window.removeEventListener(UNAUTHORIZED, onUnauthorized);
+  }, [client]);
+  if (isPending) return null;
+  if (data?.authRequired && !data.authenticated) return <Login />;
+  return <Shell />;
+}
+
 export default function App() {
   return (
     <QueryClientProvider client={qc}>
       <BrowserRouter>
-        <Shell />
+        <Gate />
       </BrowserRouter>
     </QueryClientProvider>
   );

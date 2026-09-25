@@ -1,6 +1,7 @@
 import { useMemo, type ReactNode } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useQueryClient } from '@tanstack/react-query';
+import { api } from './api';
 import { useApps, useRecentEntries, type TileApp } from './live';
 import { useShell } from './shell-context';
 import { isDark, useTheme } from './theme';
@@ -75,7 +76,7 @@ export function useCommands(query: string, done: () => void): { items: Command[]
       action('football', 'Football settings', 'Leagues, clubs and the Home widget', <IconSliders />, go('/settings/football')),
       action('rescan', 'Rescan apps folder', 'Pick up new hub.json manifests', <IconRefresh />, () => {
         done();
-        fetch('/api/registry/rescan', { method: 'POST' })
+        api('/api/registry/rescan', { method: 'POST' })
           .then((r) => {
             if (!r.ok) throw new Error();
             qc.invalidateQueries();

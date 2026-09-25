@@ -2,16 +2,18 @@ import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { useShell } from '../shell-context';
+import { api } from '../api';
 import { categoryColor, plural } from '../data';
 import { useTheme, type ThemePref } from '../theme';
 import { AppGlyph, AppTile, DemoBanner, EmptyState, PageHeader, SkeletonGrid } from '../components/ui';
 import {
   IconAlert, IconArrowLeft, IconCheck, IconClock, IconEyeOff, IconGrid, IconHome, IconMenu, IconMonitor,
-  IconMoon, IconPlus, IconPopOut, IconRefresh, IconSearch, IconStar, IconStarFilled, IconSun, IconChevronRight, IconCloud,
+  IconMoon, IconPlus, IconPopOut, IconRefresh, IconSearch, IconStar, IconStarFilled, IconSun, IconChevronRight, IconCloud, IconChevronUp, IconChevronDown,
 } from '../components/Icons';
+import { useHubSettings } from '../status';
 import { AppIcon } from '../components/AppIcon';
 import {
-  get, markOpened, useApps, useLiveApps, useRegistryErrors, type LiveApp, type RecentEntry, type TileApp,
+  get, healthBadge, markOpened, useApps, useCategoryList, useLiveApps, useRegistryErrors, type LiveApp, type RecentEntry, type TileApp,
 } from '../live';
 
 // Pin / install changes apply instantly and roll back if the server says no.
@@ -22,7 +24,7 @@ function useAppMutations() {
     qc.setQueryData<LiveApp[]>(['apps'], (old) => old?.map((a) => (a.id === id ? { ...a, ...change } : a)));
   const send = (url: string, on: boolean, id: string, change: Partial<LiveApp>, undo: Partial<LiveApp>) => {
     patch(id, change);
-    return fetch(url, { method: on ? 'POST' : 'DELETE' })
+    return api(url, { method: on ? 'POST' : 'DELETE' })
       .then((r) => {
         if (!r.ok) throw new Error();
       })
@@ -142,6 +144,7 @@ export function AllApps() {
                   app={a}
                   index={i}
                   sub={a.category}
+                  badge={healthBadge(a)}
                   actions={
                     <>
                       <PinButton app={a} onClick={guard(status, () => setPinned(a, !a.pinned))} />
@@ -265,7 +268,14 @@ export function OpenApp() {
   const { id = '' } = useParams();
   const nav = useNavigate();
   const { apps, status } = useApps();
-  const { refetch, isFetching } = useLiveApps();
+  const { refetch } = useLiveApps();
+  const [checking, setChecking] = useState(false);
+  const retry = async () => {
+    setChecking(true);
+    await api(`/api/apps/${id}/check`, { method: 'POST' }).catch(() => {});
+    await refetch();
+    setChecking(false);
+  };
   const { openMenu, openSearch } = useShell();
   const app = apps.find((a) => a.id === id);
   const known = !!app?.installed;
@@ -328,10 +338,10 @@ export function OpenApp() {
           <EmptyState
             icon={<AppGlyph app={app} size={64} />}
             title={`${app.name} is offline`}
-            body="The service didn't answer its health check. Start it, then retry."
+            body={`Its service didn't answer the health check${app.healthError ? ` (${app.healthError})` : ''}. Start it, then retry.`}
             action={
-              <button type="button" className="btn btn-primary" onClick={() => refetch()} disabled={isFetching}>
-                <IconRefresh size={16} className={isFetching ? 'spin' : ''} />{isFetching ? 'Checking…' : 'Retry'}
+              <button type="button" className="btn btn-primary" onClick={retry} disabled={checking}>
+                <IconRefresh size={16} className={checking ? 'spin' : ''} />{checking ? 'Checking…' : 'Retry'}
               </button>
             }
           />
@@ -396,10 +406,23 @@ export function Settings() {
   const doneTimer = useRef<number | undefined>(undefined);
   useEffect(() => () => window.clearTimeout(doneTimer.current), []);
 
+  const { data: hub } = useHubSettings();
+  const categories = useCategoryList();
+  const move = async (i: number, dir: number) => {
+    const names = categories.map((c) => c.name);
+    [names[i], names[i + dir]] = [names[i + dir], names[i]];
+    await api('/api/settings/category-order', { method: 'PUT', json: names });
+    qc.invalidateQueries({ queryKey: ['categories'] });
+  };
+  const signOut = async () => {
+    await api('/api/logout', { method: 'POST' });
+    qc.invalidateQueries();
+  };
+
   const rescan = async () => {
     setScan('busy');
     try {
-      const r = await fetch('/api/registry/rescan', { method: 'POST' });
+      const r = await api('/api/registry/rescan', { method: 'POST' });
       if (!r.ok) throw new Error();
       await Promise.all([refetch(), qc.invalidateQueries()]);
       setScan('done');
@@ -443,11 +466,11 @@ export function Settings() {
             <span className="grow"><b>Football</b><small>Leagues, clubs and what shows when nothing is live</small></span>
             <IconChevronRight size={16} />
           </Link>
-          <div className="link-row static">
-            <span className="link-icon"><IconCloud size={18} /></span>
-            <span className="grow"><b>Weather and calendar</b><small>Arrive with the status strip</small></span>
-            <span className="soon">Coming soon</span>
-          </div>
+          <Link to="/settings/status" className="link-row">
+            <span className="link-icon solid"><IconCloud size={18} /></span>
+            <span className="grow"><b>Weather and calendar</b><small>Location, calendar link and app health</small></span>
+            <IconChevronRight size={16} />
+          </Link>
         </div>
       </section>
 
@@ -483,6 +506,36 @@ export function Settings() {
           </ul>
         )}
       </section>
+
+      {categories.length > 1 && (
+        <section className="form-section" aria-labelledby="order-h">
+          <h2 id="order-h">Category order</h2>
+          <p className="form-help">How categories are listed in the sidebar.</p>
+          <ol className="order-list">
+            {categories.map((c, i) => (
+              <li key={c.name}>
+                <span className="grow">{c.name}</span>
+                <button type="button" className="icon-btn" aria-label={`Move ${c.name} up`} disabled={i === 0} onClick={() => move(i, -1)}>
+                  <IconChevronUp size={16} />
+                </button>
+                <button type="button" className="icon-btn" aria-label={`Move ${c.name} down`} disabled={i === categories.length - 1} onClick={() => move(i, 1)}>
+                  <IconChevronDown size={16} />
+                </button>
+              </li>
+            ))}
+          </ol>
+        </section>
+      )}
+
+      {hub?.authEnabled && (
+        <section className="form-section split" aria-labelledby="account-h">
+          <div>
+            <h2 id="account-h">Account</h2>
+            <p className="form-help">Signed in on this device for 30 days.</p>
+          </div>
+          <button type="button" className="pill-btn" onClick={signOut}>Sign out</button>
+        </section>
+      )}
 
       <section className="form-section" aria-labelledby="keys-h">
         <h2 id="keys-h">Keyboard</h2>
