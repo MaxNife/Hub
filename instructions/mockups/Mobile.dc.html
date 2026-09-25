@@ -1,0 +1,153 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Hub home, mobile</title>
+<script src="./vendor/react.js"></script>
+<script src="./vendor/react-dom.js"></script>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,400..800&amp;family=Instrument+Sans:wght@400..700&amp;display=swap">
+<style>
+body{margin:0}
+a{color:inherit}a:hover{opacity:.8}
+button{cursor:pointer}
+button:focus-visible,a:focus-visible,input:focus-visible{outline:2px solid #3552E0;outline-offset:3px}
+</style>
+</helmet>
+<div style="width: 390px; height: 844px; box-sizing: border-box; overflow: hidden; display: flex; flex-direction: column; background: #EEE9DF; color: #1C1A16; font-family: 'Instrument Sans', system-ui, sans-serif; font-variant-numeric: tabular-nums">
+
+<header style="display: flex; align-items: center; justify-content: space-between; height: 56px; padding: 0 8px; border-bottom: 1px solid #D9D1C2">
+<button type="button" aria-label="Open menu" style="display: flex; align-items: center; justify-content: center; width: 44px; height: 44px; border: none; background: none; color: #1C1A16">
+<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h10"></path></svg>
+</button>
+<div style="display: flex; align-items: center; gap: 8px">
+<svg width="20" height="20" viewBox="0 0 26 26" aria-hidden="true"><rect x="0" y="0" width="11.5" height="11.5" rx="3.5" fill="#7C5CFF"></rect><rect x="14.5" y="0" width="11.5" height="11.5" rx="3.5" fill="#FF9F3F"></rect><rect x="0" y="14.5" width="11.5" height="11.5" rx="3.5" fill="#2EBE7A"></rect><rect x="14.5" y="14.5" width="11.5" height="11.5" rx="3.5" fill="#FF5C7A"></rect></svg>
+<span style="font-family: 'Bricolage Grotesque', sans-serif; font-size: 19px; font-weight: 700; letter-spacing: -0.02em">Hub</span>
+</div>
+<button type="button" aria-label="Profile, Hope" style="display: flex; align-items: center; justify-content: center; width: 44px; height: 44px; border: none; background: none">
+<span aria-hidden="true" style="display: flex; align-items: center; justify-content: center; width: 30px; height: 30px; border-radius: 999px; background: #F2A03D; color: #1C1A16; font-weight: 700; font-size: 13px">H</span>
+</button>
+</header>
+
+<main style="padding: 22px 20px 24px; display: flex; flex-direction: column">
+<div style="display: flex; justify-content: space-between; font-size: 13px; color: #625B4F">
+<span>Thursday 24 September</span>
+<span>21:21</span>
+</div>
+<h1 style="margin: 10px 0 0; font-family: 'Bricolage Grotesque', sans-serif; font-size: 50px; font-weight: 700; letter-spacing: -0.045em; line-height: 0.95">Good evening, Hope</h1>
+
+<label for="hub-search-m" style="display: flex; align-items: center; gap: 12px; height: 52px; margin-top: 18px; padding: 0 16px; box-sizing: border-box; border: 1px solid #D9D1C2; border-radius: 16px; background: #F8F5EF; box-shadow: 0 1px 0 rgba(255,255,255,0.8) inset, 0 10px 22px rgba(70,50,20,0.08); cursor: text">
+<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#625B4F" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="11" cy="11" r="7"></circle><path d="M16.5 16.5 21 21"></path></svg>
+<span style="position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap">Search Hub</span>
+<input id="hub-search-m" type="text" autocomplete="off" placeholder="Open an app or run a command" style="flex-grow: 1; min-width: 0; height: 36px; border: none; outline: none; background: transparent; color: #1C1A16; font: inherit; font-size: 16px">
+</label>
+
+<section aria-label="Today" style="margin-top: 16px; display: flex; flex-direction: column">
+<div style="display: grid; grid-template-columns: 44px minmax(0, 1fr); column-gap: 14px; align-items: start; padding: 14px 0; border-top: 1px solid #D9D1C2">
+<svg width="44" height="44" viewBox="0 0 64 64" aria-hidden="true"><defs><linearGradient id="mf1" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#36C572"></stop><stop offset="1" stop-color="#0E6B39"></stop></linearGradient></defs><rect width="64" height="64" rx="16" fill="url(#mf1)"></rect><circle cx="32" cy="32" r="15" fill="none" stroke="#FFFFFF" stroke-width="4"></circle><path d="M32 25.5l6.2 4.5-2.4 7.3h-7.6L25.8 30z" fill="#FFFFFF"></path><path d="M32 25.5V18M38.2 30l7.2-2.3M35.8 37.3l4.4 6M28.2 37.3l-4.4 6M25.8 30l-7.2-2.3" stroke="#FFFFFF" stroke-width="3" stroke-linecap="round"></path></svg>
+<div>
+<div style="display: flex; align-items: center; gap: 8px; font-size: 12px">
+<span style="height: 20px; display: inline-flex; align-items: center; padding: 0 8px; border-radius: 999px; background: #1E7A48; color: #FFFFFF; font-weight: 700">Live {{p.minute}}</span>
+<span style="color: #625B4F">{{p.league}}</span>
+</div>
+<div style="display: flex; align-items: center; gap: 8px; margin-top: 8px">
+<svg width="20" height="23" viewBox="0 0 40 46" aria-hidden="true"><path d="M4 4h32v16c0 12-8 20-16 23C12 40 4 32 4 20z" fill="{{p.homeColor}}"></path></svg>
+<span style="font-family: 'Bricolage Grotesque', sans-serif; font-size: 19px; font-weight: 600; letter-spacing: -0.015em">{{p.home}}</span>
+<span style="padding: 0 4px; font-family: 'Bricolage Grotesque', sans-serif; font-size: 21px; font-weight: 700">{{p.score}}</span>
+<span style="font-family: 'Bricolage Grotesque', sans-serif; font-size: 19px; font-weight: 600; letter-spacing: -0.015em">{{p.away}}</span>
+<svg width="20" height="23" viewBox="0 0 40 46" aria-hidden="true"><path d="M4 4h32v16c0 12-8 20-16 23C12 40 4 32 4 20z" fill="{{p.awayColor}}"></path></svg>
+</div>
+<div style="display: flex; align-items: center; justify-content: space-between; margin-top: 4px">
+<div aria-hidden="true" style="display: flex; gap: 5px">
+<sc-for list="{{dots}}" as="d" hint-placeholder-count="2">
+<span style="width: {{d.w}}; height: 5px; border-radius: 999px; background: {{d.bg}}"></span>
+</sc-for>
+</div>
+<button type="button" onClick="{{next}}" aria-label="Next match" style="display: flex; align-items: center; justify-content: center; width: 44px; height: 44px; margin-right: -10px; border: none; background: none; color: #625B4F">
+<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m9 5 7 7-7 7"></path></svg>
+</button>
+</div>
+</div>
+</div>
+
+<div style="display: grid; grid-template-columns: 44px minmax(0, 1fr) auto; column-gap: 14px; align-items: center; padding: 14px 0; border-top: 1px solid #D9D1C2">
+<svg width="44" height="44" viewBox="0 0 64 64" aria-hidden="true"><defs><linearGradient id="mp1" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#FFB443"></stop><stop offset="1" stop-color="#FF5E1F"></stop></linearGradient></defs><rect width="64" height="64" rx="16" fill="url(#mp1)"></rect><path d="M22 16v10a5 5 0 0 0 10 0V16M27 16v32M43 48V16c-4 2-6 8-6 15h6" fill="none" stroke="#FFFFFF" stroke-width="4.5" stroke-linecap="round" stroke-linejoin="round"></path></svg>
+<div>
+<p style="margin: 0; font-family: 'Bricolage Grotesque', sans-serif; font-size: 19px; font-weight: 600; letter-spacing: -0.015em; line-height: 1.2">Tonight it's {{meal}}</p>
+<p style="margin: 3px 0 0; font-size: 13px; color: #625B4F">Picked by Meal picker</p>
+</div>
+<button type="button" onClick="{{reroll}}" aria-label="Reroll tonight's meal" style="display: flex; align-items: center; justify-content: center; width: 44px; height: 44px; border: 1px solid #D9D1C2; border-radius: 999px; background: #F8F5EF; color: #1C1A16">
+<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 7h3.5c2 0 3.3 1 4.5 3l2 4c1.2 2 2.5 3 4.5 3H21M18 14l3 3-3 3M3 17h3.5c1.6 0 2.7-.6 3.7-1.8M13.8 8.8C14.8 7.6 15.9 7 17.5 7H21M18 4l3 3-3 3"></path></svg>
+</button>
+</div>
+
+<div style="display: grid; grid-template-columns: 44px minmax(0, 1fr) auto; column-gap: 14px; align-items: center; padding: 14px 0; border-top: 1px solid #D9D1C2; border-bottom: 1px solid #D9D1C2">
+<svg width="44" height="44" viewBox="0 0 64 64" aria-hidden="true"><defs><linearGradient id="mm1" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#A07FFF"></stop><stop offset="1" stop-color="#5A32E0"></stop></linearGradient></defs><rect width="64" height="64" rx="16" fill="url(#mm1)"></rect><rect x="15" y="20" width="19" height="27" rx="4" fill="#FFFFFF" fill-opacity="0.5" transform="rotate(-12 24.5 33.5)"></rect><rect x="28" y="16" width="19" height="27" rx="4" fill="#FFFFFF" transform="rotate(8 37.5 29.5)"></rect></svg>
+<div>
+<p style="margin: 0; font-family: 'Bricolage Grotesque', sans-serif; font-size: 19px; font-weight: 600; letter-spacing: -0.015em; line-height: 1.2">Finish Memory</p>
+<div style="display: flex; align-items: center; gap: 8px; margin-top: 6px">
+<div aria-hidden="true" style="width: 64px; height: 4px; border-radius: 999px; background: #D9D1C2; overflow: hidden"><div style="width: 75%; height: 4px; background: #1C1A16"></div></div>
+<span style="font-size: 13px; color: #625B4F">6 of 8 pairs</span>
+</div>
+</div>
+<button type="button" style="display: flex; align-items: center; gap: 6px; height: 44px; padding: 0 16px; border: none; border-radius: 999px; background: #1C1A16; color: #EEE9DF; font: inherit; font-size: 14px; font-weight: 600">
+<svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M7 4.5v15a1 1 0 0 0 1.5.9l12-7.5a1 1 0 0 0 0-1.8l-12-7.5A1 1 0 0 0 7 4.5z"></path></svg>Resume</button>
+</div>
+</section>
+
+<section aria-label="Your apps" style="margin-top: 20px">
+<div style="display: flex; justify-content: space-between; align-items: baseline">
+<h2 style="margin: 0; font-family: 'Bricolage Grotesque', sans-serif; font-size: 22px; font-weight: 650; letter-spacing: -0.02em">Your apps</h2>
+<a href="#" style="font-size: 14px; font-weight: 600; color: #625B4F; text-underline-offset: 4px">See all</a>
+</div>
+<div style="display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; margin-top: 14px">
+<a href="#" style="display: flex; flex-direction: column; align-items: center; gap: 10px; text-decoration: none; color: #1C1A16">
+<span style="position: relative; display: block; width: 64px; height: 64px"><svg width="64" height="64" viewBox="0 0 64 64" aria-hidden="true" style="filter: drop-shadow(0 8px 12px rgba(70,50,20,0.20))"><defs><linearGradient id="mm2" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#A07FFF"></stop><stop offset="1" stop-color="#5A32E0"></stop></linearGradient></defs><rect width="64" height="64" rx="16" fill="url(#mm2)"></rect><rect x="15" y="20" width="19" height="27" rx="4" fill="#FFFFFF" fill-opacity="0.5" transform="rotate(-12 24.5 33.5)"></rect><rect x="28" y="16" width="19" height="27" rx="4" fill="#FFFFFF" transform="rotate(8 37.5 29.5)"></rect></svg><span style="position: absolute; top: -4px; right: -4px; display: block; width: 18px; height: 18px; box-sizing: border-box; border-radius: 999px; border: 3px solid #EEE9DF; background: #1E7A48"><span style="position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap">Running</span></span></span>
+<span style="font-size: 13px; font-weight: 600">Memory</span>
+</a>
+<a href="#" style="display: flex; flex-direction: column; align-items: center; gap: 10px; text-decoration: none; color: #1C1A16">
+<span style="position: relative; display: block; width: 64px; height: 64px"><svg width="64" height="64" viewBox="0 0 64 64" aria-hidden="true" style="filter: drop-shadow(0 8px 12px rgba(70,50,20,0.20))"><defs><linearGradient id="mc2" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#5A8DFF"></stop><stop offset="1" stop-color="#2146C9"></stop></linearGradient></defs><rect width="64" height="64" rx="16" fill="url(#mc2)"></rect><path d="M18 25h26m-7-7 7 7-7 7M46 39H20m7-7-7 7 7 7" fill="none" stroke="#FFFFFF" stroke-width="4.5" stroke-linecap="round" stroke-linejoin="round"></path></svg><span style="position: absolute; top: -7px; right: -10px; padding: 2px 6px; border-radius: 999px; border: 2px solid #EEE9DF; background: #1C1A16; color: #EEE9DF; font-size: 10px; font-weight: 700; line-height: 1.3">Update</span></span>
+<span style="font-size: 13px; font-weight: 600">Converter</span>
+</a>
+<a href="#" style="display: flex; flex-direction: column; align-items: center; gap: 10px; text-decoration: none; color: #1C1A16">
+<svg width="64" height="64" viewBox="0 0 64 64" aria-hidden="true" style="filter: drop-shadow(0 8px 12px rgba(70,50,20,0.20))"><defs><linearGradient id="mp2" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#FFB443"></stop><stop offset="1" stop-color="#FF5E1F"></stop></linearGradient></defs><rect width="64" height="64" rx="16" fill="url(#mp2)"></rect><path d="M22 16v10a5 5 0 0 0 10 0V16M27 16v32M43 48V16c-4 2-6 8-6 15h6" fill="none" stroke="#FFFFFF" stroke-width="4.5" stroke-linecap="round" stroke-linejoin="round"></path></svg>
+<span style="font-size: 13px; font-weight: 600">Meal picker</span>
+</a>
+<button type="button" style="display: flex; flex-direction: column; align-items: center; gap: 10px; padding: 0; border: none; background: none; font: inherit; color: #1C1A16">
+<span aria-hidden="true" style="display: flex; align-items: center; justify-content: center; width: 64px; height: 64px; box-sizing: border-box; border: 1.5px dashed #B8AE9C; border-radius: 16px; color: #625B4F">
+<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M12 5v14M5 12h14"></path></svg>
+</span>
+<span style="font-size: 13px; font-weight: 600">Add app</span>
+</button>
+</div>
+</section>
+</main>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":390,"height":844}}'>
+class Component extends DCLogic {
+  renderVals() {
+    const st = this.state || {};
+    const pages = [
+      { minute: '67′', league: 'Premier League', home: 'Arsenal', homeColor: '#DB0007', score: '2–1', away: 'Chelsea', awayColor: '#034694' },
+      { minute: '64′', league: 'Premier League', home: 'Liverpool', homeColor: '#C8102E', score: '0–0', away: 'Everton', awayColor: '#003399' }
+    ];
+    const idx = (st.fbIndex || 0) % pages.length;
+    const meals = ['jollof rice and chicken', 'beans and plantain'];
+    const mealIndex = st.mealIndex || 0;
+    return {
+      p: pages[idx],
+      dots: pages.map((_, i) => ({ w: i === idx ? '16px' : '5px', bg: i === idx ? '#1C1A16' : '#B8AE9C' })),
+      next: () => this.setState({ fbIndex: idx + 1 }),
+      meal: meals[mealIndex % meals.length],
+      reroll: () => this.setState({ mealIndex: mealIndex + 1 })
+    };
+  }
+}
+</script>
+</body>
+</html>

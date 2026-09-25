@@ -1,58 +1,104 @@
 # Hub
 
-Personal app store: one Go binary + React frontend + SQLite. See `Hub — System Design.md`.
+Personal app store: one Go binary + React frontend + SQLite. Drop a folder
+with a `hub.json` into `apps/` and it shows up. See
+`instructions/Hub — System Design.md` and the mockups in
+`instructions/mockups/`.
 
 ## Layout
 
-- `cmd/hub/` — binary entrypoint
+- `cmd/hub/` — binary entrypoint (`hub`, `hub hash-password`)
 - `internal/config/` — env vars
-- `internal/store/` — SQLite + migrations
+- `internal/store/` — SQLite, migrations, retention, backups
 - `internal/registry/` — scan `apps/`, validate `hub.json`
-- `internal/proxy/` — reverse proxy per service app (M4)
-- `internal/health/` — poll service apps (M4)
-- `internal/integrations/` — weather, calendar providers (M5)
-- `internal/auth/` — password, sessions (M6)
+- `internal/serve/`, `internal/proxy/` — static apps and service-app reverse proxy
+- `internal/health/` — 30 s health checks for service apps
+- `internal/integrations/` — weather (Open-Meteo) and calendar (ICS) providers
+- `internal/auth/` — password, sessions, CSRF header, login throttling
 - `internal/api/` — JSON handlers
-- `web/` — React + TS + Tailwind frontend (embedded in binary)
-- `apps/` — app folders, each with `hub.json` + icon
-- `data/` — `hub.db`, logs (git-ignored)
+- `internal/spa/`, `internal/logging/`, `internal/maint/` — shell serving, logs, daily housekeeping
+- `web/` — React + TS frontend (embedded in the binary)
+- `apps/` — the apps: Converter, Meal picker, Memory, Reaction, Puzzle,
+  Random, Name generator (static); Football, Transcribe (service)
+- `appkit/` — theme snippet static apps copy so they match Hub
+- `data/` — `hub.db`, logs, backups (git-ignored)
 
 ## Prerequisites
 
-- Go 1.22+ — a local copy lives in `.tools/go` (downloaded, git-ignored);
-  `build.ps1` uses it when `go` isn't on PATH
-- Node 20+
+- Go 1.25+ and Node 20+
+- Python 3.10+ for the service apps (Football needs nothing else;
+  Transcribe needs `pip install -r apps/transcribe/requirements.txt`)
 
 > Windows note: Smart App Control in enforced mode blocks the freshly built
 > unsigned `hub.exe`. During development run the server with
-> `go run ./cmd/hub` (works fine); allow-list the release binary before
-> running it as a service.
+> `go run ./cmd/hub`; allow-list the release binary before running it as a
+> service.
 
 ## Dev
 
 ```powershell
-# frontend (Vite proxies /api + /apps to Go on :8080)
+# frontend (Vite proxies /api + /apps/ to Go on :8080)
 cd web; npm.cmd install; npm.cmd run dev
 
-# backend
-$env:Path = "$pwd\.tools\go\bin;" + $env:Path
+# backend (needs web/dist once: npm.cmd run build)
 go run ./cmd/hub
 # open http://127.0.0.1:8080
+
+# service apps, each in its own terminal (or NSSM / systemd in production)
+python apps/football/server.py      # :8101
+python apps/transcribe/server.py    # :8102
 ```
 
-## End-to-end tests
+Hub checks service apps every 30 seconds; a stopped one gets a red dot and
+an offline screen, and recovers on its own (or with Retry) once it's back.
+
+## Configuration
+
+| Setting | Env var | Default |
+| --- | --- | --- |
+| Listen address | `HUB_ADDR` | `127.0.0.1:8080` |
+| Apps folder | `HUB_APPS_DIR` | `./apps` |
+| Data folder | `HUB_DATA_DIR` | `./data` |
+| Password hash | `HUB_PASSWORD_HASH` | none; required if not on localhost |
+| Calendar ICS link | `HUB_CALENDAR_ICS` | none; the status line hides the event |
+| TLS certificate + key | `HUB_TLS_CERT`, `HUB_TLS_KEY` | none |
+| Log level | `HUB_LOG_LEVEL` | `info` |
+
+Weather location and units are set in the app: Settings → Weather and calendar.
+Football's leagues and clubs: Settings → Football.
+
+## Sign-in and remote access
 
 ```powershell
-node e2e.cjs   # hub.exe must be up on :8080; 12 checks across every route
+.\hub.exe hash-password            # type a password (8+ characters)
+$env:HUB_PASSWORD_HASH = '<hash>'  # single quotes: the hash contains $
+```
+
+With a hash set, Hub asks for the password and keeps you signed in for 30
+days. Hub refuses to listen beyond localhost without one. For your phone,
+prefer a private network over opening a port: for example
+`tailscale serve --bg 8080` keeps Hub on `127.0.0.1` and gives you HTTPS on
+your tailnet. To serve HTTPS directly instead, set `HUB_TLS_CERT` and
+`HUB_TLS_KEY`.
+
+## Tests
+
+```powershell
+go test ./...                                   # server packages
+python -m unittest apps/football/test_server.py apps/transcribe/test_server.py
+node e2e.cjs     # hub must be running on :8080 from the repo root, no password set
+cd web; npm.cmd run lint; npx tsc -b
 ```
 
 ## Build
 
 ```powershell
-.\build.ps1
-.\data\hub.exe  # or .\hub.exe depending on output
+.\build.ps1      # frontend, then hub.exe with it embedded
+.\hub.exe
 ```
 
 ## Milestones
 
-M0 skeleton → M1 registry + static app → M2 shell → M3 home+launcher → M4 service apps → M5 status strip → M6 auth → M7 transcribe. See System Design § Build plan.
+M0 skeleton → M1 registry + static app → M2 shell → M3 home + launcher →
+M4 service apps → M5 status strip → M6 auth → M7 transcribe. All built; see
+System Design § Build plan.

@@ -21,7 +21,7 @@ Hub is a personal app store: one web frontend that launches all apps, tools and 
 - Multiple users or roles.
 - The AI agent. The manifest leaves room for it (see Later), but nothing is built for it in v1.
 
-Visual reference: [Hub home, desktop mockup](https://claude.ai/artifact/FfGY5agGhX84J3tescGZvX).
+Visual reference: the mockups in `instructions/mockups/` (Home desktop, Home mobile, Football settings).
 
 ## Architecture at a glance
 
@@ -150,7 +150,11 @@ internal/integrations    # weather, calendar providers
 internal/store           # SQLite access + migrations
 internal/auth            # password check, sessions, middleware
 internal/api             # JSON handlers
+internal/spa             # serves the embedded React build with index.html fallback
+internal/logging         # slog JSON to stdout + size-rotated data/hub.log
+internal/maint           # daily pruning and database backups
 web/                     # React app; its build is embedded
+appkit/                  # theme snippet static apps copy into their <head>
 ```
 
 **Registry.** Scans `apps/` at startup and on `POST /api/registry/rescan`. It keeps the parsed apps in memory behind a `sync.RWMutex`; the database stores only user state (installed, pinned, opens). File watching can come later; a rescan button is enough for v1.
@@ -167,12 +171,18 @@ web/                     # React app; its build is embedded
 | `DELETE /api/apps/{id}/install` | Hide it (files stay on disk) |
 | `POST /api/apps/{id}/pin` · `DELETE …/pin` | Favorites |
 | `POST /api/apps/{id}/opened` | Record an open, feeds Recently used |
+| `POST /api/apps/{id}/check` | Run a service app's health check now (the offline screen's Retry) |
 | `GET /api/recent?limit=6` | Most recently opened installed apps |
 | `GET /api/categories` | Categories with app counts, in display order |
 | `GET /api/status` | Status strip data: weather, next event, health summary |
 | `POST /api/registry/rescan` | Re-read `apps/` |
 | `GET /api/registry/errors` | Manifests that failed validation, with reasons |
 | `GET /healthz` | Hub's own health, no auth |
+| `GET /api/settings` | Weather location, category order, whether the calendar and login are configured |
+| `PUT /api/settings/weather` · `DELETE …` | Set or clear the weather location and units |
+| `PUT /api/settings/category-order` | Sidebar category order |
+| `GET /api/geocode?q=` | Place search for the weather location (Hub calls out, the browser never does) |
+| `GET /api/session` | Whether a password is required and whether this browser is signed in |
 | `POST /api/login` · `POST /api/logout` | Session auth |
 
 **Non-API routes**
@@ -184,27 +194,30 @@ Errors return JSON `{"error": "message"}` with a proper status code. Every reque
 
 ## Frontend (React + TypeScript)
 
-A Vite single-page app: React Router for pages, TanStack Query for everything fetched from `/api` (caching, refetch, loading states), Tailwind for styling with the mockup's colors and fonts as theme tokens. In development, Vite runs on its own port and proxies `/api` and `/apps` to the Go server on `:8080`.
+A Vite single-page app: React Router for pages, TanStack Query for everything fetched from `/api` (caching, refetch, loading states), and plain CSS with the mockups' colours and fonts as CSS variables (`web/src/index.css`), light and dark. Fonts (Bricolage Grotesque, Instrument Sans) are bundled, so Hub looks right offline. In development, Vite runs on its own port and proxies `/api` and `/apps/` to the Go server on `:8080`.
 
 **Screens**
 
 | Route | Screen | What's on it |
 | --- | --- | --- |
-| `/` | Home | Greeting, status strip, Recently used (6), Browse by category |
+| `/` | Home | Status line (date, time, weather, next event, app health), greeting, search box, Today rows (football carousel, tonight's meal, Memory progress), Your apps grid with category filters |
 | `/c/{category}` | Category | Icon grid of that category's installed apps |
-| `/apps` | All apps | Every installed app plus a Not installed section with Install buttons |
-| `/open/{id}` | App view | Slim top bar (back, icon, name, pop-out) and the app in an iframe |
-| `/settings` | Settings | Install and hide apps, category order, integration settings, manifest errors, rescan |
+| `/apps` | All apps | Every installed app with Pin and Hide, plus a Not installed section with Install buttons |
+| `/favorites` · `/recent` | Favorites, Recent | Pinned apps; the last dozen launches |
+| `/open/{id}` | App view | Slim top bar (menu, home, icon, name, app switcher, pop-out) and the app in an iframe |
+| `/settings` | Settings | Theme, widgets, apps folder rescan, manifest errors, category order, sign out |
+| `/settings/football` | Football | Leagues, clubs, what shows when nothing is live, carousel length |
+| `/settings/status` | Weather and calendar | Weather location and units, calendar status, app health with Check now |
 
-**Layout.** A fixed left sidebar (logo, search, Home, Favorites, Recently used, categories with counts, Settings) and a scrolling main area on the dot-textured background. Under 900 px wide the sidebar collapses behind a menu button.
+**Layout.** A fixed left sidebar (logo, Home, All apps, Favorites, Recent, categories with counts, Settings, profile and theme toggle) and a scrolling main area on warm paper. Under 900 px the sidebar becomes a drawer behind a top bar; under 640 px Home switches to the mobile mockup's compact layout.
 
-**Launcher.** Ctrl+K opens a command palette from anywhere, including over an open app. It does a fuzzy search over app names, descriptions and tags; Enter opens the top result. The same component later lists quick actions.
+**Launcher.** Home's search box (focus with `/`) and the Ctrl+K palette (from anywhere, including over an open app) share one command list: fuzzy search over app names, descriptions and tags, plus actions (reroll the meal, switch theme, rescan, open settings). ↑/↓ select, Enter runs.
 
 **Opening an app.** Click → `POST /api/apps/{id}/opened` (fire and forget) → navigate to `/open/{id}` → iframe `src="/apps/{id}/"`. Pop-out opens the same URL in a new browser tab for full-screen use. If the app is a service app and its last health check failed, the app view shows an "offline, retry" state instead of a broken iframe.
 
-**Main components:** `Sidebar`, `StatusStrip`, `AppIcon`, `AppCard`, `RecentRow`, `CategoryCard`, `CommandPalette`, `AppFrame`, `HealthDot`.
+**Main components:** `Sidebar`, `HomeSearch`, `StatusItems`, `FootballRow`, `MealRow`, `MemoryRow`, `AppTile` (with health dot), `CommandPalette`, `OpenApp`, `Login`.
 
-**Design tokens** from the [mockup](https://claude.ai/artifact/FfGY5agGhX84J3tescGZvX): display font Bricolage Grotesque, body font Figtree, background `#F3EFE7` with a 22 px dot grid, sidebar `#17151F`, cards white at 78% opacity with a `#E4DED2` border, 20–24 px radii. App icons are multi-color SVGs supplied by each app.
+**Design tokens** from the mockups: display font Bricolage Grotesque, body font Instrument Sans; light `--paper #EEE9DF`, `--surface #F8F5EF`, `--ink #1C1A16`, `--muted #625B4F`, `--line #D9D1C2`, `--dash #B8AE9C`, `--live #1E7A48`, focus `#3552E0`; dark `--paper #17150F`, `--surface #221F18`, `--ink #F2EDE3`, `--muted #A69E8F`, `--line #35302A`. Rows are separated by hairlines rather than boxed in cards; buttons are pills; app icons are multi-colour SVGs on a 64 px grid with 16 px corners, supplied by each app. Static apps copy `appkit/theme-head.html` to share the tokens and follow Hub's light/dark choice.
 
 ## Data model (SQLite)
 
@@ -283,7 +296,7 @@ Hub starts out bound to `127.0.0.1`, reachable only from your own machine. The m
 
 - **One user, one password.** The password's bcrypt hash lives in config (`HUB_PASSWORD_HASH`), never the plain password. A `hub hash-password` subcommand generates it.
 - **Sessions.** Login sets a random 32-byte token in a cookie marked `HttpOnly`, `Secure` (when served over HTTPS) and `SameSite=Lax`, valid 30 days. Only the token's SHA-256 hash is stored in `sessions`.
-- **What's protected.** Auth middleware wraps `/api/*` and `/apps/*`, so every service app inherits the login without implementing one. Only `/healthz`, `/api/login` and the login page are open.
+- **What's protected.** Auth middleware wraps `/api/*` and `/apps/*`, so every service app inherits the login without implementing one. Only `/healthz`, `/api/login`, `/api/session` and the shell itself (which shows the login screen) are open. Hub never forwards its session cookie to service apps.
 - **CSRF.** `SameSite=Lax` plus a required `X-Hub-Request: 1` header on every state-changing API call.
 - **Login throttling.** After 5 failed attempts from one IP, wait 1 minute.
 - **Trust model.** Apps share Hub's origin, so any app's JavaScript can call the Hub API. That's acceptable because every app is your own code; it's also why third-party apps are a non-goal.
@@ -302,14 +315,16 @@ The release artifact is one executable plus an `apps/` folder and a `data/` fold
 | Password hash | `HUB_PASSWORD_HASH` | none; required if not on localhost |
 | Calendar ICS link | `HUB_CALENDAR_ICS` | none; strip hides the pill |
 | Log level | `HUB_LOG_LEVEL` | `info` |
+| TLS certificate and key | `HUB_TLS_CERT`, `HUB_TLS_KEY` | none; set both to serve HTTPS directly |
+| Weather and place search APIs | `HUB_WEATHER_URL`, `HUB_GEOCODE_URL` | Open-Meteo; override only for testing |
 
 **Running it.** On Windows, run the binary as a service with NSSM set to Automatic start, so Hub survives reboots without anyone logging in. On Linux, a systemd unit does the same. Docker Compose becomes the better option once there are several service apps: one file starts Hub and every service app together.
 
 **Service apps in v1** are started the same way as Hub (their own NSSM service or a Compose entry). Hub only checks their health; it doesn't start or restart them.
 
-**Logs.** `slog` writes JSON lines to stdout and `data/hub.log`, rotated at 10 MB by a small library such as lumberjack (slog doesn't rotate on its own).
+**Logs.** `slog` writes JSON lines to stdout and `data/hub.log`, rotated at 10 MB with three old files kept, by a small built-in rotator (slog doesn't rotate on its own).
 
-**Backups.** Copy `data/hub.db` daily using SQLite's `VACUUM INTO` so the copy is consistent while Hub runs. The `apps/` folders should live in git.
+**Backups.** Hub copies `data/hub.db` daily with SQLite's `VACUUM INTO` (consistent while Hub runs) to `data/backups/hub-YYYYMMDD.db`, keeping the last seven. The same daily job prunes opens, health checks and expired sessions. The `apps/` folders should live in git.
 
 ## Build plan
 
@@ -328,11 +343,13 @@ Eight milestones, each ending in something you can open and use. Every milestone
 
 The remaining games and tools (Reaction, Puzzle, Random, Names) can be added any time after M2, since they're just more static apps.
 
+**Status (Sep 2026):** M0–M7 are built, along with Reaction, Puzzle, Random and Names. Football uses ESPN's public scoreboard feed (no key); Transcribe uses faster-whisper locally.
+
 ## Later: widgets, quick actions, AI
 
 All three hang off optional manifest fields, so existing apps keep working untouched.
 
-**Widgets.** An app adds `"widget": {"path": "/widget", "size": "wide"}`. Home renders that path in a small iframe (sizes `small` and `wide`) above Recently used, like the football score and tonight's meal in the mockup. Widgets refresh themselves; Hub just gives them a slot.
+**Widgets.** An app adds `"widget": {"path": "/widget", "size": "wide"}`. Home renders that path as another row in its Today list, like the football carousel and tonight's meal (which are built into the shell for now). Widgets refresh themselves; Hub just gives them a slot.
 
 **Quick actions.** An app lists what it can do without being opened:
 
@@ -360,5 +377,5 @@ Each has a v1 default, so none of them blocks starting.
 | Manual rescan or watch `apps/` for changes? | Manual rescan button | Adding apps becomes frequent |
 | Shared `localStorage` with prefixes, or a Hub key-value API? | Prefixes | A static app needs data on more than one device |
 | Where does Hub live long-term: laptop or a small always-on server? | Laptop | Phone access matters when the laptop is off |
-| Tailwind or CSS modules? | Tailwind | Styles get hard to read |
+| Tailwind or CSS modules? | Decided: plain CSS with variables in one stylesheet | Styles get hard to read |
 | Calendar via ICS link or Google Calendar API? | ICS link | You want to create or edit events from Hub |

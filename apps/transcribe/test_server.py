@@ -47,6 +47,7 @@ class TranscribeTest(unittest.TestCase):
 
     def tearDown(self):
         self.srv.shutdown()
+        self.srv.server_close()
         self.tmp.cleanup()
 
     def req(self, method, path, body=None):
