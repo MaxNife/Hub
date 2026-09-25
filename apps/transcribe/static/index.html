@@ -1,0 +1,225 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Transcribe</title>
+<script>
+  (function () {
+    function apply() {
+      try {
+        var t = localStorage.getItem('hub:theme');
+        if (t === 'light' || t === 'dark') document.documentElement.setAttribute('data-theme', t);
+        else document.documentElement.removeAttribute('data-theme');
+      } catch (e) {}
+    }
+    apply();
+    window.addEventListener('storage', function (e) { if (e.key === 'hub:theme') apply(); });
+  })();
+</script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,400..800&family=Instrument+Sans:wght@400..700&display=swap">
+<style>
+  :root {
+    color-scheme: light;
+    --paper: #eee9df; --surface: #f8f5ef; --ink: #1c1a16; --muted: #625b4f; --line: #d9d1c2; --dash: #b8ae9c;
+    --live: #1e7a48; --focus: #3552e0; --bad: #c0322f;
+    --display: 'Bricolage Grotesque', system-ui, sans-serif;
+    --body: 'Instrument Sans', system-ui, -apple-system, 'Segoe UI', sans-serif;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) { color-scheme: dark; --paper: #17150f; --surface: #221f18; --ink: #f2ede3; --muted: #a69e8f; --line: #35302a; --dash: #5a5345; --live: #4cc784; --focus: #8fa2ff; --bad: #f0706b; }
+  }
+  :root[data-theme="dark"] { color-scheme: dark; --paper: #17150f; --surface: #221f18; --ink: #f2ede3; --muted: #a69e8f; --line: #35302a; --dash: #5a5345; --live: #4cc784; --focus: #8fa2ff; --bad: #f0706b; }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--paper); color: var(--ink); font-family: var(--body); font-variant-numeric: tabular-nums; -webkit-font-smoothing: antialiased; }
+  button, select { font: inherit; color: inherit; }
+  :focus-visible { outline: 2px solid var(--focus); outline-offset: 3px; }
+  .wrap { max-width: 760px; margin: 0 auto; padding: 32px 32px 48px; }
+  h1 { margin: 0; font-family: var(--display); font-size: 48px; font-weight: 700; letter-spacing: -0.04em; line-height: 1; }
+  .lead { margin: 10px 0 0; color: var(--muted); font-size: 16px; }
+  .notice { margin-top: 20px; padding: 14px 16px; border: 1px solid var(--line); border-radius: 14px; background: var(--surface); font-size: 15px; }
+  .notice code { font-size: 13px; background: var(--paper); border: 1px solid var(--line); border-radius: 6px; padding: 1px 6px; }
+  .drop {
+    display: flex; flex-direction: column; align-items: center; gap: 10px; margin-top: 28px; padding: 36px 20px;
+    border: 1.5px dashed var(--dash); border-radius: 18px; text-align: center; transition: border-color .15s, background-color .15s;
+  }
+  .drop.over { border-color: var(--ink); background: var(--surface); }
+  .drop b { font-family: var(--display); font-size: 22px; font-weight: 650; letter-spacing: -0.02em; }
+  .drop p { margin: 0; color: var(--muted); font-size: 14px; }
+  .row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; justify-content: center; margin-top: 6px; }
+  .ink { height: 44px; padding: 0 20px; border: none; border-radius: 999px; background: var(--ink); color: var(--paper); font-weight: 600; font-size: 15px; cursor: pointer; }
+  .pill { height: 36px; padding: 0 14px; border: 1px solid var(--line); border-radius: 999px; background: var(--surface); font-weight: 600; font-size: 14px; cursor: pointer; }
+  .pill:hover { border-color: var(--dash); }
+  select { height: 44px; padding: 0 12px; border: 1px solid var(--line); border-radius: 12px; background: var(--surface); font-size: 15px; }
+  h2 { margin: 36px 0 0; font-family: var(--display); font-size: 24px; font-weight: 650; letter-spacing: -0.02em; }
+  .job { padding: 16px 0; border-top: 1px solid var(--line); }
+  .job:last-child { border-bottom: 1px solid var(--line); }
+  .top { display: flex; align-items: center; gap: 12px; }
+  .name { flex-grow: 1; min-width: 0; font-weight: 600; font-size: 16px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .meta { margin-top: 4px; font-size: 14px; color: var(--muted); }
+  .meta.err { color: var(--bad); }
+  .x { width: 36px; height: 36px; border: none; border-radius: 999px; background: none; color: var(--muted); cursor: pointer; font-size: 18px; }
+  .x:hover { background: var(--surface); color: var(--ink); }
+  .bar { width: 100%; max-width: 320px; height: 5px; margin-top: 10px; border-radius: 999px; background: var(--line); overflow: hidden; }
+  .bar span { display: block; height: 100%; background: var(--ink); border-radius: 999px; transition: width .4s; }
+  .bar.busy span { width: 30% !important; animation: slide 1.1s ease-in-out infinite; }
+  @keyframes slide { from { transform: translateX(-110%); } to { transform: translateX(340%); } }
+  .text { margin-top: 12px; padding: 16px; border: 1px solid var(--line); border-radius: 14px; background: var(--surface); font-size: 16px; line-height: 1.6; white-space: pre-wrap; max-height: 360px; overflow: auto; }
+  .actions { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 10px; }
+  .empty { margin-top: 16px; color: var(--muted); font-size: 15px; }
+  @media (max-width: 640px) { .wrap { padding: 20px 16px 32px; } h1 { font-size: 36px; } }
+  @media (prefers-reduced-motion: reduce) { .bar.busy span { animation: none; } }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>Transcribe</h1>
+  <p class="lead">Turn recordings into text. Files are transcribed on this computer, one at a time, while you use other apps.</p>
+  <div class="notice" id="engine" hidden></div>
+
+  <label class="drop" id="drop" for="file">
+    <b>Drop audio or video here</b>
+    <p>MP3, M4A, WAV, MP4 and more</p>
+    <span class="row">
+      <span class="ink" style="display:inline-flex;align-items:center" role="button">Choose a file</span>
+      <select id="lang" aria-label="Language" onclick="event.preventDefault(); event.stopPropagation();">
+        <option value="auto">Detect language</option>
+        <option value="en">English</option><option value="fr">French</option><option value="es">Spanish</option>
+        <option value="de">German</option><option value="pt">Portuguese</option><option value="yo">Yoruba</option>
+        <option value="ig">Igbo</option><option value="ha">Hausa</option><option value="sw">Swahili</option>
+      </select>
+    </span>
+    <input id="file" type="file" accept="audio/*,video/*" multiple hidden>
+  </label>
+
+  <h2>Recordings</h2>
+  <div id="jobs" aria-live="polite"></div>
+</div>
+<script>
+(function () {
+  'use strict';
+  var jobsEl = document.getElementById('jobs');
+  var drop = document.getElementById('drop');
+  var fileInput = document.getElementById('file');
+  var lang = document.getElementById('lang');
+  var open = {};        // job ids with the transcript expanded
+  var uploads = {};     // temporary rows while a file uploads
+  var timer = null;
+  var cache = {};
+  var engineMissing = false;
+
+  lang.addEventListener('mousedown', function (e) { e.stopPropagation(); });
+  lang.addEventListener('click', function (e) { e.stopPropagation(); });
+
+  function esc(s) { var d = document.createElement('div'); d.textContent = s == null ? '' : String(s); return d.innerHTML; }
+  function size(n) { return n > 1e9 ? (n / 1e9).toFixed(1) + ' GB' : n > 1e6 ? (n / 1e6).toFixed(1) + ' MB' : Math.max(1, Math.round(n / 1e3)) + ' KB'; }
+  function mins(s) { var m = Math.floor(s / 60), r = Math.round(s % 60); return m ? m + ' min ' + (r ? r + ' s' : '') : r + ' s'; }
+
+  function upload(file) {
+    var key = 'u' + Date.now() + Math.random();
+    uploads[key] = { name: file.name, size: file.size, sent: 0 };
+    render();
+    var xhr = new XMLHttpRequest();
+    xhr.open('POST', './api/jobs?name=' + encodeURIComponent(file.name) + '&language=' + lang.value);
+    xhr.upload.onprogress = function (e) { if (e.lengthComputable) { uploads[key].sent = e.loaded / e.total; render(); } };
+    xhr.onload = function () {
+      delete uploads[key];
+      if (xhr.status !== 201) {
+        var msg = 'Upload failed';
+        try { msg = JSON.parse(xhr.responseText).error || msg; } catch (e) {}
+        alert(msg);
+      }
+      refresh();
+    };
+    xhr.onerror = function () { delete uploads[key]; alert('Upload failed. Is Transcribe still running?'); render(); };
+    xhr.send(file);
+  }
+
+  function pick(files) { Array.prototype.forEach.call(files, upload); fileInput.value = ''; }
+  fileInput.addEventListener('change', function () { pick(fileInput.files); });
+  ['dragenter', 'dragover'].forEach(function (t) { drop.addEventListener(t, function (e) { e.preventDefault(); drop.classList.add('over'); }); });
+  ['dragleave', 'drop'].forEach(function (t) { drop.addEventListener(t, function (e) { e.preventDefault(); drop.classList.remove('over'); }); });
+  drop.addEventListener('drop', function (e) { if (e.dataTransfer.files.length) pick(e.dataTransfer.files); });
+
+  function status(j) {
+    if (j.status === 'queued') {
+      if (engineMissing) return 'Waiting for the speech engine';
+      return j.queuePosition ? 'Waiting · ' + j.queuePosition + ' ahead' : 'Starting…';
+    }
+    if (j.status === 'running') {
+      if (!j.duration) return 'Loading the speech model…';
+      var pct = Math.round(j.progress * 100);
+      var el = (Date.now() / 1000) - j.started_at;
+      var eta = j.progress > 0.03 ? el / j.progress - el : null;
+      return pct + '% of ' + mins(j.duration) + (eta ? ' · about ' + mins(Math.max(1, eta)) + ' left' : '');
+    }
+    if (j.status === 'done') return 'Done' + (j.duration ? ' · ' + mins(j.duration) : '') + (j.detected ? ' · ' + j.detected.toUpperCase() : '');
+    return j.error || 'Failed';
+  }
+
+  function render(list) {
+    if (list) cache.list = list;
+    list = cache.list || [];
+    var html = '';
+    Object.keys(uploads).forEach(function (k) {
+      var u = uploads[k];
+      html += '<div class="job"><div class="top"><span class="name">' + esc(u.name) + '</span></div>' +
+        '<div class="meta">Uploading ' + Math.round(u.sent * 100) + '% of ' + size(u.size) + '</div>' +
+        '<div class="bar"><span style="width:' + (u.sent * 100) + '%"></span></div></div>';
+    });
+    list.forEach(function (j) {
+      var running = j.status === 'running' || j.status === 'queued';
+      html += '<div class="job" data-id="' + j.id + '"><div class="top"><span class="name">' + esc(j.name) + '</span>' +
+        (j.status === 'done' ? '<button class="pill" data-act="toggle">' + (open[j.id] ? 'Hide' : 'Read') + '</button>' : '') +
+        '<button class="x" data-act="delete" aria-label="' + (running ? 'Cancel ' : 'Delete ') + esc(j.name) + '">×</button></div>' +
+        '<div class="meta' + (j.status === 'error' ? ' err' : '') + '">' + esc(status(j)) + ' · ' + size(j.size) + '</div>' +
+        (running ? '<div class="bar' + (j.status === 'queued' || !j.duration ? ' busy' : '') + '"><span style="width:' + (j.progress * 100) + '%"></span></div>' : '') +
+        (open[j.id] && open[j.id].text != null ? '<div class="text">' + esc(open[j.id].text || '(No speech found)') + '</div>' +
+          '<div class="actions"><button class="pill" data-act="copy">Copy text</button>' +
+          '<a class="pill" style="display:inline-flex;align-items:center;text-decoration:none;color:inherit" href="./api/jobs/' + j.id + '/transcript.txt">Download .txt</a>' +
+          '<a class="pill" style="display:inline-flex;align-items:center;text-decoration:none;color:inherit" href="./api/jobs/' + j.id + '/transcript.srt">Subtitles .srt</a></div>' : '') +
+        '</div>';
+    });
+    jobsEl.innerHTML = html || '<p class="empty">Nothing yet. Drop a recording above to start.</p>';
+  }
+
+  jobsEl.addEventListener('click', function (e) {
+    var b = e.target.closest('[data-act]');
+    if (!b) return;
+    var id = b.closest('.job').dataset.id;
+    var act = b.dataset.act;
+    if (act === 'toggle') {
+      if (open[id]) { delete open[id]; render(); return; }
+      open[id] = {};
+      fetch('./api/jobs/' + id).then(function (r) { return r.json(); }).then(function (j) { open[id] = { text: j.text }; render(); });
+    } else if (act === 'copy') {
+      navigator.clipboard.writeText(open[id].text || '').then(function () { b.textContent = 'Copied'; setTimeout(function () { b.textContent = 'Copy text'; }, 1500); });
+    } else if (act === 'delete') {
+      fetch('./api/jobs/' + id, { method: 'DELETE' }).then(refresh);
+    }
+  });
+
+  function refresh() {
+    clearTimeout(timer);
+    fetch('./api/jobs').then(function (r) { return r.json(); }).then(function (list) {
+      render(list);
+      var busy = list.some(function (j) { return j.status === 'queued' || j.status === 'running'; });
+      timer = setTimeout(refresh, busy || Object.keys(uploads).length ? 1500 : 10000);
+    }).catch(function () { timer = setTimeout(refresh, 5000); });
+  }
+
+  fetch('./health').then(function (r) { return r.json(); }).then(function (h) {
+    if (h.engine === 'missing') {
+      engineMissing = true;
+      render();
+      var n = document.getElementById('engine');
+      n.hidden = false;
+      n.innerHTML = 'The speech engine isn’t installed yet. On the Hub machine run <code>pip install -r apps/transcribe/requirements.txt</code>, then restart Transcribe. Uploads will wait in the queue.';
+    }
+  }).catch(function () {});
+  refresh();
+})();
+</script>
+</body>
+</html>

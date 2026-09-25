@@ -17,3 +17,7 @@ __debug_bin*
 
 # Windows
 Thumbs.db
+
+# Service apps keep their own data next to them
+apps/*/data/
+__pycache__/
