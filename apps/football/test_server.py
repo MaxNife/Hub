@@ -114,6 +114,15 @@ class FootballTest(unittest.TestCase):
         self.assertEqual(f["mode"], "fixtures")  # no La Liga results, so fall back
         self.assertEqual(len(f["matches"]), 1)
 
+    def test_clubs_summary(self):
+        LIVE["on"] = True
+        out = fs.clubs_summary(["Arsenal", "Barcelona", "Nobody FC"], now=NOW)["clubs"]
+        ars, bar, nobody = out
+        self.assertEqual((ars["team"]["code"], ars["live"]["id"], ars["last"]["id"], ars["next"]["id"]), ("ARS", "9", "1", "2"))
+        self.assertEqual((bar["last"], bar["next"]["id"]), (None, "4"))
+        self.assertEqual((nobody["team"], nobody["next"]), (None, None))
+        self.assertEqual(fs.clubs_summary([], now=NOW), {"clubs": []})
+
     def test_http_endpoints(self):
         def get(p):
             with urllib.request.urlopen(self.base + p) as r:
@@ -121,6 +130,7 @@ class FootballTest(unittest.TestCase):
         self.assertEqual(get("/health"), {"status": "ok"})
         feed = get("/api/feed?leagues=pl,ucl&clubs=Arsenal&idle=auto&window=2&count=3")
         self.assertIn(feed["mode"], ("results", "fixtures", "live"))
+        self.assertEqual(get("/api/clubs?clubs=Arsenal")["clubs"][0]["name"], "Arsenal")
         table = get("/api/table?league=pl")
         self.assertEqual(table["rows"][0]["points"], 16)
         with urllib.request.urlopen(self.base + "/") as r:

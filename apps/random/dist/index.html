@@ -55,59 +55,96 @@
   .die { width: 72px; height: 72px; display: grid; grid-template: repeat(3, 1fr) / repeat(3, 1fr); padding: 10px; border-radius: 16px; background: var(--paper); box-shadow: inset 0 0 0 1px var(--line); }
   .die i { width: 12px; height: 12px; margin: auto; border-radius: 999px; background: var(--ink); visibility: hidden; }
   .die i.on { visibility: visible; }
-  .rolling .die, .rolling .big, .rolling .coin { animation: shake .45s ease; }
+  .poly { width: 72px; height: 72px; display: flex; align-items: center; justify-content: center; font-family: var(--display); font-size: 28px; font-weight: 700; color: var(--paper); background: var(--ink); clip-path: polygon(50% 0, 100% 38%, 82% 100%, 18% 100%, 0 38%); }
+  .rolling .die, .rolling .poly, .rolling .big, .rolling .coin { animation: shake .45s ease; }
   @keyframes shake { 20% { transform: rotate(-12deg) scale(.95); } 50% { transform: rotate(10deg) scale(1.05); } 80% { transform: rotate(-4deg); } }
   .coin { width: 96px; height: 96px; display: flex; align-items: center; justify-content: center; border-radius: 999px; background: linear-gradient(135deg, #ffe066, #ff9a1f); color: #3a2400; font-family: var(--display); font-size: 20px; font-weight: 700; }
   .controls { display: flex; align-items: center; justify-content: center; gap: 10px; flex-wrap: wrap; }
   label { font-size: 14px; color: var(--muted); display: inline-flex; align-items: center; gap: 8px; }
   input[type=number], select { width: 96px; height: 44px; padding: 0 12px; border: 1px solid var(--line); border-radius: 12px; background: var(--paper); font-size: 16px; }
   textarea { width: 100%; min-height: 120px; padding: 12px; border: 1px solid var(--line); border-radius: 12px; background: var(--paper); font: inherit; font-size: 15px; resize: vertical; text-align: left; margin-bottom: 12px; }
+  .lists { display: flex; gap: 6px; flex-wrap: wrap; justify-content: flex-start; margin-bottom: 10px; }
+  .lists .ak-chip { height: 32px; font-size: 13px; }
   .tally { margin-top: 14px; font-size: 14px; color: var(--muted); }
-  h2 { margin: 32px 0 8px; font-family: var(--display); font-size: 22px; font-weight: 650; letter-spacing: -0.02em; }
   ol { margin: 0; padding: 0; list-style: none; }
   ol li { display: flex; justify-content: space-between; gap: 12px; padding: 10px 0; border-top: 1px solid var(--line); font-size: 15px; }
   ol li:last-child { border-bottom: 1px solid var(--line); }
-  ol li small { color: var(--muted); }
+  ol li small { color: var(--muted); white-space: nowrap; }
   [hidden] { display: none !important; }
 </style>
+<link rel="stylesheet" href="./app-kit.css">
 </head>
 <body>
 <div class="wrap">
-  <h1>Random</h1>
-  <p class="sub">Dice, coins, numbers, or pick one from a list.</p>
+  <div id="head"></div>
   <div class="seg" role="group" aria-label="Mode" id="modes">
     <button type="button" data-mode="dice">Dice</button>
     <button type="button" data-mode="coin">Coin</button>
     <button type="button" data-mode="number">Number</button>
     <button type="button" data-mode="pick">Pick one</button>
   </div>
-
   <section class="panel" id="panel">
     <div class="result" id="result" aria-live="polite"></div>
-    <div class="controls" data-for="dice"><label>Dice <select id="dice"><option>1</option><option selected>2</option><option>3</option><option>4</option><option>5</option></select></label></div>
+    <div class="controls" data-for="dice"><label>Dice <select id="dice"><option>1</option><option>2</option><option>3</option><option>4</option><option>5</option></select></label></div>
     <div class="controls" data-for="number">
       <label>From <input id="min" type="number" value="1"></label>
       <label>to <input id="max" type="number" value="100"></label>
     </div>
-    <div data-for="pick"><textarea id="list" aria-label="Options, one per line" placeholder="One option per line"></textarea></div>
-    <div class="controls" style="margin-top:14px"><button class="ink-btn" id="go" type="button">Roll</button></div>
+    <div data-for="pick">
+      <div class="lists" id="lists"></div>
+      <textarea id="list" aria-label="Options, one per line" placeholder="One option per line"></textarea>
+    </div>
+    <div class="controls" style="margin-top:14px">
+      <button class="ink-btn" id="go" type="button">Roll</button>
+      <button class="pill-btn" id="savelist" type="button" data-for="pick">Save list</button>
+    </div>
     <p class="tally" id="tally"></p>
   </section>
-
-  <h2>History</h2>
-  <ol id="history"></ol>
+  <section class="ak-section" id="histsec">
+    <div class="ak-section-head"><h2>History</h2><button type="button" id="clear">Clear</button></div>
+    <ol id="history"></ol>
+  </section>
 </div>
+<script src="./app-kit.js"></script>
 <script>
 (function () {
   'use strict';
   var PIPS = { 1: [4], 2: [0, 8], 3: [0, 4, 8], 4: [0, 2, 6, 8], 5: [0, 2, 4, 6, 8], 6: [0, 2, 3, 5, 6, 8] };
-  var mode = 'dice', history = [], coins = { Heads: 0, Tails: 0 };
   var $ = function (id) { return document.getElementById(id); };
-  function load(key, def) { try { var v = localStorage.getItem(key); return v === null ? def : v; } catch (e) { return def; } }
-  function save(key, v) { try { localStorage.setItem(key, v); } catch (e) {} }
-  $('list').value = load('random:list', 'Pizza\nSushi\nJollof\nTacos');
-  $('list').addEventListener('input', function () { save('random:list', $('list').value); });
-  mode = load('random:mode', 'dice');
+  var kit = AppKit.create({
+    id: 'random',
+    title: 'Random',
+    fields: [
+      { type: 'heading', label: 'Dice' },
+      { key: 'sides', label: 'Dice', type: 'choice', def: '6', choices: [['4', 'd4'], ['6', 'd6'], ['8', 'd8'], ['10', 'd10'], ['12', 'd12'], ['20', 'd20']] },
+      { key: 'total', label: 'Show the total', type: 'toggle', def: true },
+      { type: 'heading', label: 'Picking' },
+      { key: 'noRepeat', label: 'Don’t pick the same option twice in a row', type: 'toggle', def: false },
+      { type: 'heading', label: 'Feel' },
+      { key: 'vibrate', label: 'Vibrate on each roll', type: 'toggle', def: true, hint: 'On phones that support it' },
+      { key: 'history', label: 'Keep history', type: 'toggle', def: true },
+      { type: 'action', label: 'History and coin tally', button: 'Clear', danger: true, run: function (k, close) { clearAll(); close(); } },
+      { type: 'action', label: 'Saved lists', button: 'Delete all', danger: true, run: function (k, close) { k.store.remove('lists'); paintLists(); close(); } },
+    ],
+    onChange: function (key) {
+      if (key === 'history' && !kit.settings.history) kit.store.remove('history');
+      paintHistory(); setMode(mode);
+    },
+  });
+  $('head').replaceWith(kit.header({ tagline: 'Dice, coins, numbers, or pick one from a list.' }));
+
+  // Older versions stored plain strings; read either.
+  function stored(key, def) {
+    try { var raw = localStorage.getItem('random:' + key); if (raw == null) return def; try { return JSON.parse(raw); } catch (e) { return raw; } } catch (e) { return def; }
+  }
+  var mode = stored('mode', 'dice'), coins = kit.store.get('coins', { Heads: 0, Tails: 0 }), lastPick = null;
+  $('list').value = stored('list', 'Pizza\nSushi\nJollof\nTacos');
+  $('dice').value = String(kit.store.get('dice', 2));
+  var range = kit.store.get('range', [1, 100]);
+  $('min').value = range[0]; $('max').value = range[1];
+  $('list').addEventListener('input', function () { kit.store.set('list', $('list').value); });
+  $('dice').addEventListener('change', function () { kit.store.set('dice', +$('dice').value); });
+  ['min', 'max'].forEach(function (id) { $(id).addEventListener('change', function () { kit.store.set('range', [+$('min').value, +$('max').value]); }); });
 
   // Crypto-quality randomness where available.
   function rand(n) {
@@ -120,32 +157,34 @@
   }
   function esc(s) { var d = document.createElement('div'); d.textContent = s; return d.innerHTML; }
   function die(v) {
+    if (+kit.settings.sides !== 6) return '<span class="poly" aria-label="' + v + '">' + v + '</span>';
     var html = '<span class="die" aria-label="' + v + '">';
     for (var i = 0; i < 9; i++) html += '<i' + (PIPS[v].indexOf(i) >= 0 ? ' class="on"' : '') + '></i>';
     return html + '</span>';
   }
-
   function setMode(m) {
     mode = m;
-    save('random:mode', m);
+    kit.store.set('mode', m);
     document.querySelectorAll('[data-mode]').forEach(function (b) { b.setAttribute('aria-pressed', String(b.dataset.mode === m)); });
     document.querySelectorAll('[data-for]').forEach(function (el) { el.hidden = el.dataset.for !== m; });
     $('go').textContent = { dice: 'Roll', coin: 'Flip', number: 'Generate', pick: 'Pick one' }[m];
     $('result').innerHTML = '<span class="big" style="color:var(--dash)">?</span>';
-    $('tally').textContent = m === 'coin' ? 'Heads ' + coins.Heads + ' · Tails ' + coins.Tails : '';
+    $('tally').textContent = m === 'coin' ? 'Heads ' + coins.Heads + ' · Tails ' + coins.Tails : m === 'dice' ? 'd' + kit.settings.sides : '';
   }
-
+  function options() { return $('list').value.split('\n').map(function (s) { return s.trim(); }).filter(Boolean); }
   function go() {
     var html, text;
     if (mode === 'dice') {
-      var n = +$('dice').value, vals = [];
-      for (var i = 0; i < n; i++) vals.push(rand(6) + 1);
+      var n = +$('dice').value, sides = +kit.settings.sides, vals = [];
+      for (var i = 0; i < n; i++) vals.push(rand(sides) + 1);
+      var sum = vals.reduce(function (a, b) { return a + b; }, 0);
       html = vals.map(die).join('');
-      text = vals.join(' + ') + (n > 1 ? ' = ' + vals.reduce(function (a, b) { return a + b; }, 0) : '');
-      if (n > 1) html += '<span class="big" style="font-size:40px">= ' + vals.reduce(function (a, b) { return a + b; }, 0) + '</span>';
+      text = vals.join(' + ') + (n > 1 ? ' = ' + sum : '');
+      if (n > 1 && kit.settings.total) html += '<span class="big" style="font-size:40px">= ' + sum + '</span>';
     } else if (mode === 'coin') {
       text = rand(2) ? 'Heads' : 'Tails';
       coins[text]++;
+      kit.store.set('coins', coins);
       html = '<span class="coin">' + text + '</span>';
       $('tally').textContent = 'Heads ' + coins.Heads + ' · Tails ' + coins.Tails;
     } else if (mode === 'number') {
@@ -153,26 +192,68 @@
       if (!isFinite(lo) || !isFinite(hi) || hi < lo) { html = '<span class="sub">Set a range where “to” is at least “from”.</span>'; text = null; }
       else { text = String(lo + rand(hi - lo + 1)); html = '<span class="big">' + text + '</span>'; }
     } else {
-      var opts = $('list').value.split('\n').map(function (s) { return s.trim(); }).filter(Boolean);
+      var opts = options();
+      if (kit.settings.noRepeat && opts.length > 1) opts = opts.filter(function (o) { return o !== lastPick; });
       if (!opts.length) { html = '<span class="sub">Add a few options first.</span>'; text = null; }
-      else { text = opts[rand(opts.length)]; html = '<span class="big" style="font-size:44px">' + esc(text) + '</span>'; }
+      else { text = opts[rand(opts.length)]; lastPick = text; html = '<span class="big" style="font-size:44px">' + esc(text) + '</span>'; }
     }
-    var r = $('result');
-    r.innerHTML = html;
+    $('result').innerHTML = html;
     $('panel').classList.remove('rolling'); void $('panel').offsetWidth; $('panel').classList.add('rolling');
-    if (text) {
-      history.unshift({ mode: mode, text: text, at: new Date() });
-      history = history.slice(0, 10);
-      $('history').innerHTML = history.map(function (h) {
-        return '<li><span>' + esc(h.text) + '</span><small>' + h.mode + ' · ' + h.at.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', second: '2-digit' }) + '</small></li>';
-      }).join('');
+    if (kit.settings.vibrate && navigator.vibrate) navigator.vibrate(30);
+    if (text && kit.settings.history) {
+      var history = kit.store.get('history', []);
+      history.unshift({ mode: mode, text: text, at: Date.now() });
+      kit.store.set('history', history.slice(0, 20));
+      paintHistory();
     }
   }
-
+  function paintHistory() {
+    var history = kit.settings.history ? kit.store.get('history', []) : [];
+    $('histsec').hidden = !history.length;
+    $('history').innerHTML = history.map(function (h) {
+      return '<li><span>' + esc(h.text) + '</span><small>' + h.mode + ' · ' + kit.ago(h.at) + '</small></li>';
+    }).join('');
+  }
+  function clearAll() {
+    kit.store.remove('history');
+    coins = { Heads: 0, Tails: 0 };
+    kit.store.set('coins', coins);
+    paintHistory(); setMode(mode);
+  }
+  // Saved lists for Pick one: tap to load, long list of choices kept by name.
+  function paintLists() {
+    var lists = kit.store.get('lists', {});
+    var box = $('lists');
+    box.innerHTML = '';
+    Object.keys(lists).forEach(function (name) {
+      var b = document.createElement('button');
+      b.type = 'button';
+      b.className = 'ak-chip';
+      b.textContent = name;
+      b.title = lists[name].split('\n').length + ' options';
+      b.addEventListener('click', function () { $('list').value = lists[name]; kit.store.set('list', lists[name]); lastPick = null; });
+      box.appendChild(b);
+    });
+  }
+  $('savelist').addEventListener('click', function () {
+    if (!options().length) return kit.toast('Add a few options first');
+    var name = (window.prompt('Name this list', options().slice(0, 2).join(' or ')) || '').trim();
+    if (!name) return;
+    var lists = kit.store.get('lists', {});
+    lists[name] = options().join('\n');
+    kit.store.set('lists', lists);
+    paintLists();
+    kit.toast('Saved “' + name + '”');
+  });
+  $('clear').addEventListener('click', function () { kit.store.remove('history'); paintHistory(); });
   document.querySelectorAll('[data-mode]').forEach(function (b) { b.addEventListener('click', function () { setMode(b.dataset.mode); }); });
   $('go').addEventListener('click', go);
-  document.addEventListener('keydown', function (e) { if (e.key === 'Enter' && e.target.tagName !== 'TEXTAREA') { e.preventDefault(); go(); } });
+  document.addEventListener('keydown', function (e) {
+    if (e.key === 'Enter' && e.target.tagName !== 'TEXTAREA' && e.target.tagName !== 'BUTTON' && !document.querySelector('.ak-modal-back')) { e.preventDefault(); go(); }
+  });
   setMode(mode);
+  paintHistory();
+  paintLists();
 })();
 </script>
 </body>

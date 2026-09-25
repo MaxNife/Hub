@@ -240,6 +240,39 @@ def feed(leagues: list[str], clubs: list[str], idle: str, window: int, count: in
             "nextMatchInDays": next_days}
 
 
+def clubs_summary(clubs: list[str], now: datetime | None = None) -> dict:
+    """For the Football app's home: each followed club's live, last and next match."""
+    now = now or datetime.now(timezone.utc)
+    names = [c.strip() for c in clubs if c.strip()]
+    start, end = now - timedelta(days=PAST_DAYS), now + timedelta(days=AHEAD_DAYS)
+    matches, errors, seen = [], [], set()
+    for lid in LEAGUES if names else []:
+        try:
+            for m in scoreboard(lid, start, end):
+                if m["id"] not in seen:
+                    seen.add(m["id"])
+                    matches.append(m)
+        except UpstreamError as e:
+            errors.append(str(e))
+    if errors and not matches:
+        raise UpstreamError(errors[0])
+    matches.sort(key=lambda m: _parse_time(m["kickoff"]))
+    out = []
+    for name in names:
+        key = name.lower()
+        plays = lambda t: key in (t["name"].lower(), t["fullName"].lower(), t["code"].lower())
+        mine = [m for m in matches if plays(m["home"]) or plays(m["away"])]
+        team = next((m[s] for m in mine for s in ("home", "away") if plays(m[s])), None)
+        out.append({
+            "name": name,
+            "team": team,
+            "live": next((m for m in mine if m["state"] == "in"), None),
+            "last": next((m for m in reversed(mine) if m["state"] == "post"), None),
+            "next": next((m for m in mine if m["state"] == "pre"), None),
+        })
+    return {"clubs": out}
+
+
 class Handler(BaseHTTPRequestHandler):
     server_version = "HubFootball/1.0"
 
@@ -267,6 +300,8 @@ class Handler(BaseHTTPRequestHandler):
                 return self._json(200, feed(
                     leagues=split("leagues"), clubs=split("clubs"), idle=arg("idle", "auto"),
                     window=int(arg("window", "2") or 2), count=max(1, min(20, int(arg("count", "5") or 5)))))
+            if url.path == "/api/clubs":
+                return self._json(200, clubs_summary([x for x in arg("clubs").split(",") if x]))
             if url.path == "/api/scoreboard":
                 lid = arg("league", "pl")
                 if lid not in LEAGUES:

@@ -58,17 +58,15 @@
   li button:hover { background: var(--surface); color: var(--ink); }
   li button[aria-pressed="true"] { color: #e0a100; }
   @keyframes rise { from { opacity: 0; transform: translateY(8px); } }
-  h2 { margin: 36px 0 0; font-family: var(--display); font-size: 22px; font-weight: 650; letter-spacing: -0.02em; }
+  #stars { margin-top: 0; }
   .empty { color: var(--muted); font-size: 15px; margin: 8px 0 0; }
-  .toast { position: fixed; left: 50%; bottom: 24px; transform: translateX(-50%); padding: 10px 18px; border-radius: 999px; background: var(--ink); color: var(--paper); font-size: 14px; opacity: 0; transition: opacity .2s; pointer-events: none; }
-  .toast.show { opacity: 1; }
   @media (max-width: 640px) { li .name { font-size: 21px; } }
 </style>
+<link rel="stylesheet" href="./app-kit.css">
 </head>
 <body>
 <div class="wrap">
-  <h1>Name generator</h1>
-  <p class="sub">Project names on demand. Star the ones you like.</p>
+  <div id="head"></div>
   <div class="bar">
     <div class="seg" role="group" aria-label="Style" id="styles">
       <button type="button" data-style="pair">Two words</button>
@@ -79,10 +77,12 @@
     <button class="ink-btn" id="more" type="button">New names</button>
   </div>
   <ul id="list" aria-live="polite"></ul>
-  <h2>Starred</h2>
-  <ul id="stars"></ul>
+  <section class="ak-section">
+    <div class="ak-section-head"><h2>Starred <span id="starcount"></span></h2><button type="button" id="copyall">Copy all</button></div>
+    <ul id="stars"></ul>
+  </section>
 </div>
-<div class="toast" id="toast" role="status"></div>
+<script src="./app-kit.js"></script>
 <script>
 (function () {
   'use strict';
@@ -91,25 +91,58 @@
   var NATURE = ['Fern', 'Cedar', 'River', 'Moss', 'Dune', 'Tide', 'Birch', 'Heron', 'Aspen', 'Brook', 'Cove', 'Delta', 'Glade', 'Juniper', 'Lark', 'Mist', 'Oak', 'Reef', 'Sage', 'Thistle'];
   var START = ['ka', 'lo', 'mi', 'zu', 've', 'no', 'ri', 'sa', 'to', 'fe', 'ba', 'qui', 'da', 'lu', 'ne', 'xo'];
   var END = ['ra', 'lo', 'vi', 'nex', 'ly', 'do', 'ma', 'sy', 'ta', 'ro', 'va', 'io', 'ka', 'mo'];
-  var style = 'pair', names = [];
   var $ = function (id) { return document.getElementById(id); };
   var pick = function (a) { return a[Math.floor(Math.random() * a.length)]; };
+  var kit = AppKit.create({
+    id: 'names',
+    title: 'Name generator',
+    fields: [
+      { type: 'heading', label: 'Ideas' },
+      { key: 'count', label: 'Names at a time', type: 'choice', def: '8', choices: [['5', '5'], ['8', '8'], ['12', '12']] },
+      { key: 'word', label: 'Always include', type: 'text', def: '', placeholder: 'e.g. Hub', hint: 'A word to put in every name' },
+      { key: 'where', label: 'Put it', type: 'choice', def: 'before', choices: [['before', 'Before'], ['after', 'After']] },
+      { key: 'letter', label: 'Starting letter', type: 'text', def: '', placeholder: 'Any', hint: 'Only names that start with it' },
+      { type: 'heading', label: 'Copying' },
+      { key: 'copyAs', label: 'Copy as', type: 'choice', def: 'plain', choices: [['plain', 'Quiet Harbor'], ['kebab', 'quiet-harbor'], ['snake', 'quiet_harbor'], ['camel', 'QuietHarbor']] },
+      { type: 'heading', label: 'Starred' },
+      { type: 'action', label: 'Starred names', button: 'Clear', danger: true, run: function (k, close) { saveStars([]); close(); render(); } },
+    ],
+    onChange: function (key) { if (key !== 'copyAs') generate(); },
+  });
+  $('head').replaceWith(kit.header({ tagline: 'Project names on demand. Star the ones you like.' }));
+
+  var style = 'pair', names = [];
+  try { style = (localStorage.getItem('names:style') || 'pair').replace(/"/g, ''); } catch (e) {}
   function stars() { try { return JSON.parse(localStorage.getItem('names:favorites') || '[]'); } catch (e) { return []; } }
   function saveStars(s) { try { localStorage.setItem('names:favorites', JSON.stringify(s)); } catch (e) {} }
   function esc(s) { var d = document.createElement('div'); d.textContent = s; return d.innerHTML; }
-
-  function make() {
+  function base() {
     if (style === 'pair') return pick(ADJ) + ' ' + pick(NOUN);
-    if (style === 'compound') { var a = pick(NOUN), b = pick(NOUN.concat(NATURE)); return a === b ? make() : a + b.toLowerCase(); }
+    if (style === 'compound') { var a = pick(NOUN), b = pick(NOUN.concat(NATURE)); return a === b ? base() : a + b.toLowerCase(); }
     if (style === 'nature') return pick(ADJ) + ' ' + pick(NATURE);
     var w = pick(START) + pick(START.concat([''])) + pick(END);
     return w[0].toUpperCase() + w.slice(1);
   }
+  function make() {
+    var n = base(), word = (kit.settings.word || '').trim();
+    if (word) n = kit.settings.where === 'after' ? n + ' ' + word : word + ' ' + n;
+    return n;
+  }
   function generate() {
-    var seen = {};
+    var seen = {}, want = +kit.settings.count || 8, letter = (kit.settings.letter || '').trim().charAt(0).toLowerCase();
     names = [];
-    while (names.length < 8) { var n = make(); if (!seen[n]) { seen[n] = 1; names.push(n); } }
+    for (var tries = 0; names.length < want && tries < 4000; tries++) {
+      var n = make();
+      var first = (kit.settings.word && kit.settings.where !== 'after' ? n.slice(kit.settings.word.trim().length + 1) : n).charAt(0).toLowerCase();
+      if (letter && first !== letter) continue;
+      if (!seen[n]) { seen[n] = 1; names.push(n); }
+    }
     render();
+  }
+  function copyText(n) {
+    var words = n.replace(/([a-z])([A-Z])/g, '$1 $2').split(/\s+/);
+    return { plain: n, kebab: words.join('-').toLowerCase(), snake: words.join('_').toLowerCase(),
+      camel: words.map(function (w) { return w[0].toUpperCase() + w.slice(1); }).join('') }[kit.settings.copyAs] || n;
   }
   function row(n) {
     var on = stars().indexOf(n) >= 0;
@@ -118,13 +151,16 @@
       '<button type="button" data-star="' + esc(n) + '" aria-pressed="' + on + '" aria-label="' + (on ? 'Unstar ' : 'Star ') + esc(n) + '">' + (on ? '★' : '☆') + '</button></li>';
   }
   function render() {
-    $('list').innerHTML = names.map(row).join('');
+    $('list').innerHTML = names.length ? names.map(row).join('') : '<p class="empty">No names start with that letter in this style. Try another style or letter.</p>';
     var s = stars();
-    $('stars').innerHTML = s.length ? s.map(row).join('') : '<p class="empty">Nothing starred yet.</p>';
+    $('starcount').textContent = s.length ? '(' + s.length + ')' : '';
+    $('copyall').hidden = !s.length;
+    $('stars').innerHTML = s.length ? s.map(row).join('') : '<p class="ak-empty">Star names you like and they’ll wait for you here.</p>';
     document.querySelectorAll('[data-style]').forEach(function (b) { b.setAttribute('aria-pressed', String(b.dataset.style === style)); });
   }
-  function toast(msg) { var t = $('toast'); t.textContent = msg; t.classList.add('show'); clearTimeout(t._h); t._h = setTimeout(function () { t.classList.remove('show'); }, 1400); }
-
+  function copy(text, label) {
+    navigator.clipboard.writeText(text).then(function () { kit.toast('Copied ' + label); }, function () { kit.toast('Copy blocked by the browser'); });
+  }
   document.addEventListener('click', function (e) {
     var b = e.target.closest('button');
     if (!b) return;
@@ -135,11 +171,12 @@
       saveStars(s.slice(0, 50));
       render();
     } else if (b.dataset.copy) {
-      navigator.clipboard.writeText(b.dataset.copy).then(function () { toast('Copied “' + b.dataset.copy + '”'); }, function () { toast('Copy blocked by the browser'); });
+      var t = copyText(b.dataset.copy);
+      copy(t, '“' + t + '”');
     }
   });
+  $('copyall').addEventListener('click', function () { copy(stars().map(copyText).join('\n'), stars().length + ' names'); });
   $('more').addEventListener('click', generate);
-  try { style = localStorage.getItem('names:style') || 'pair'; } catch (e) {}
   generate();
 })();
 </script>

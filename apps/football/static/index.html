@@ -79,6 +79,29 @@
   .empty { margin-top: 28px; padding: 40px 20px; border: 1.5px dashed var(--dash); border-radius: 18px; text-align: center; color: var(--muted); }
   .empty b { display: block; margin-bottom: 6px; color: var(--ink); font-family: var(--display); font-size: 22px; font-weight: 650; }
   .stamp { margin-top: 20px; font-size: 13px; color: var(--muted); }
+  .browse { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+  .browse .seg { margin-top: 0; }
+  .clubs { display: grid; grid-template-columns: repeat(auto-fill, minmax(290px, 1fr)); gap: 12px; }
+  .club { padding: 16px; border: 1px solid var(--line); border-radius: 18px; background: var(--surface); }
+  .club h3 { display: flex; align-items: center; gap: 10px; margin: 0 0 12px; font-family: var(--display); font-size: 20px; font-weight: 650; letter-spacing: -.02em; }
+  .club.is-live { border-color: var(--live); box-shadow: 0 0 0 1px var(--live) inset; }
+  .line { display: flex; align-items: baseline; gap: 10px; padding: 6px 0; border-top: 1px solid var(--line); font-size: 14px; }
+  .line b { width: 44px; flex-shrink: 0; font-size: 12px; color: var(--muted); font-weight: 700; text-transform: uppercase; letter-spacing: .04em; }
+  .line span { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .line small { color: var(--muted); white-space: nowrap; }
+  .res, .live-dot { font-style: normal; }
+  .res { display: inline-flex; align-items: center; justify-content: center; width: 20px; height: 20px; margin-right: 6px; border-radius: 6px; font-size: 11px; font-weight: 800; color: #fff; background: var(--muted); }
+  .res.w { background: var(--live); } .res.l { background: var(--bad); }
+  .live-dot { display: inline-block; width: 8px; height: 8px; margin-right: 6px; border-radius: 999px; background: var(--live); animation: pulse 1.4s ease-in-out infinite; }
+  @keyframes pulse { 50% { opacity: .3; } }
+  .club-list { display: flex; flex-wrap: wrap; gap: 6px; margin: 4px 0 8px; }
+  .club-list span { display: inline-flex; align-items: center; gap: 6px; height: 34px; padding: 0 6px 0 12px; border: 1px solid var(--line); border-radius: 999px; background: var(--paper); font-size: 14px; font-weight: 600; }
+  .club-list button { width: 26px; height: 26px; border: none; border-radius: 999px; background: none; color: var(--muted); cursor: pointer; }
+  .club-add { display: flex; gap: 8px; width: 100%; }
+  .club-add input { flex: 1; min-width: 0; height: 38px; padding: 0 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--paper); font: inherit; font-size: 15px; }
+  .league-checks { display: grid; grid-template-columns: 1fr 1fr; gap: 4px 12px; width: 100%; }
+  .league-checks label { display: flex; align-items: center; gap: 8px; min-height: 36px; font-size: 15px; }
+  .league-checks input { width: 18px; height: 18px; accent-color: var(--ink); }
   @media (max-width: 640px) {
     .wrap { padding: 20px 16px 32px; }
     h1 { font-size: 36px; }
@@ -89,27 +112,33 @@
     .hide-m { display: none; }
   }
 </style>
+<link rel="stylesheet" href="./app-kit.css">
 </head>
 <body>
 <div class="wrap">
-  <header>
-    <div>
-      <h1>Football</h1>
-      <p class="sub" id="sub">Scores, results, fixtures and tables.</p>
+  <div id="head"></div>
+  <section class="ak-section" id="clubsec" style="margin-top:8px">
+    <div class="ak-section-head"><h2>Your clubs</h2><button type="button" id="editclubs">Edit</button></div>
+    <div class="clubs" id="clubs"></div>
+  </section>
+  <section class="ak-section">
+    <div class="ak-section-head"><h2>Matches</h2></div>
+    <div class="browse">
+      <div class="seg" role="group" aria-label="View" id="tabs">
+        <button type="button" data-tab="today">Live &amp; today</button>
+        <button type="button" data-tab="results">Results</button>
+        <button type="button" data-tab="fixtures">Fixtures</button>
+        <button type="button" data-tab="table">Table</button>
+      </div>
+      <label><span style="position:absolute;width:1px;height:1px;overflow:hidden;clip-path:inset(50%)">League</span>
+        <select id="league"></select>
+      </label>
     </div>
-    <label><span style="position:absolute;width:1px;height:1px;overflow:hidden;clip-path:inset(50%)">League</span>
-      <select id="league"></select>
-    </label>
-  </header>
-  <div class="seg" role="group" aria-label="View" id="tabs">
-    <button type="button" data-tab="today" aria-pressed="true">Live &amp; today</button>
-    <button type="button" data-tab="results" aria-pressed="false">Results</button>
-    <button type="button" data-tab="fixtures" aria-pressed="false">Fixtures</button>
-    <button type="button" data-tab="table" aria-pressed="false">Table</button>
-  </div>
-  <main id="out" aria-live="polite"></main>
-  <p class="stamp" id="stamp"></p>
+    <main id="out" aria-live="polite"></main>
+    <p class="stamp" id="stamp"></p>
+  </section>
 </div>
+<script src="./app-kit.js"></script>
 <script>
 (function () {
   'use strict';
@@ -117,27 +146,119 @@
     ['pl', 'Premier League'], ['ucl', 'Champions League'], ['fa', 'FA Cup'],
     ['liga', 'La Liga'], ['sa', 'Serie A'], ['bl', 'Bundesliga']
   ];
-  // Hub's Football settings (same origin): followed leagues first, clubs highlighted.
-  var settings = {};
-  try { settings = JSON.parse(localStorage.getItem('football:settings') || '{}') || {}; } catch (e) {}
-  var followed = settings.leagues || { pl: true, ucl: true };
-  var clubs = (settings.clubs || [{ name: 'Arsenal', code: 'ARS' }]).map(function (c) { return (c.code || '').toUpperCase(); });
+  var KNOWN = { arsenal: ['ARS', '#DB0007'], chelsea: ['CHE', '#034694'], liverpool: ['LIV', '#C8102E'], everton: ['EVE', '#003399'],
+    brighton: ['BHA', '#0057B8'], newcastle: ['NEW', '#241F20'], psg: ['PSG', '#004170'], 'real madrid': ['RMA', '#FEBE10'], barcelona: ['BAR', '#A50044'] };
+  function club(name) {
+    var k = KNOWN[name.toLowerCase()];
+    return { name: name, code: k ? k[0] : name.replace(/[^A-Za-z]/g, '').slice(0, 3).toUpperCase(), color: k ? k[1] : '#6B6457' };
+  }
+  // The app has its own settings. The first time, it starts from what the
+  // Home widget follows (Hub → Settings → Football), so there's nothing to retype.
+  var widget = {};
+  try { widget = JSON.parse(localStorage.getItem('football:settings') || '{}') || {}; } catch (e) {}
+  var kit = AppKit.create({
+    id: 'football',
+    title: 'Football',
+    settingsKey: 'football:app',
+    defaults: { clubs: widget.clubs || [club('Arsenal')], leagues: widget.leagues || { pl: true, ucl: true } },
+    fields: function () {
+      return [
+        { type: 'heading', label: 'Your clubs' },
+        { type: 'custom', render: clubsField },
+        { type: 'heading', label: 'Your leagues' },
+        { type: 'custom', render: leaguesField },
+        { type: 'heading', label: 'Showing matches' },
+        { key: 'tab', label: 'Open on', type: 'choice', def: 'today', choices: [['today', 'Today'], ['results', 'Results'], ['fixtures', 'Fixtures'], ['table', 'Table']] },
+        { key: 'clock', label: 'Times', type: 'choice', def: '24', choices: [['24', '15:00'], ['12', '3:00 pm']] },
+        { key: 'venue', label: 'Show stadiums', type: 'toggle', def: true },
+        { type: 'note', text: 'These are the Football app’s own settings. What the Home widget shows is set in Hub → Settings → Football.' },
+      ];
+    },
+    onChange: function () { paintLeagues(); loadClubs(); load(); },
+  });
+  document.getElementById('head').replaceWith(kit.header({ tagline: tagline() }));
+  function tagline() {
+    var names = kit.settings.clubs.map(function (c) { return c.name; });
+    return names.length ? 'Following ' + names.join(', ') : 'Scores, results, fixtures and tables.';
+  }
+  function clubsField(k) {
+    var box = document.createElement('div');
+    box.className = 'ak-field';
+    function paint() {
+      box.innerHTML = '';
+      var list = document.createElement('div');
+      list.className = 'club-list';
+      k.settings.clubs.forEach(function (c, i) {
+        var chip = document.createElement('span');
+        chip.innerHTML = shield(c.color) + esc(c.name);
+        var x = document.createElement('button');
+        x.type = 'button'; x.textContent = '×'; x.setAttribute('aria-label', 'Stop following ' + c.name);
+        x.addEventListener('click', function () { var next = k.settings.clubs.slice(); next.splice(i, 1); k.set('clubs', next); paint(); });
+        chip.appendChild(x);
+        list.appendChild(chip);
+      });
+      if (!k.settings.clubs.length) list.innerHTML = '<small>No clubs yet.</small>';
+      var add = document.createElement('div');
+      add.className = 'club-add';
+      var input = document.createElement('input');
+      input.placeholder = 'Add a club, e.g. Chelsea';
+      input.setAttribute('aria-label', 'Add a club');
+      var btn = document.createElement('button');
+      btn.type = 'button'; btn.className = 'ak-pill'; btn.textContent = 'Add';
+      function go() {
+        var name = input.value.trim();
+        if (!name) return;
+        if (!k.settings.clubs.some(function (c) { return c.name.toLowerCase() === name.toLowerCase(); })) k.set('clubs', k.settings.clubs.concat([club(name)]));
+        paint();
+        box.querySelector('input').focus();
+      }
+      btn.addEventListener('click', go);
+      input.addEventListener('keydown', function (e) { if (e.key === 'Enter') go(); });
+      add.append(input, btn);
+      box.append(list, add);
+    }
+    paint();
+    return box;
+  }
+  function leaguesField(k) {
+    var box = document.createElement('div');
+    box.className = 'ak-field';
+    var grid = document.createElement('div');
+    grid.className = 'league-checks';
+    LEAGUES.forEach(function (l) {
+      var lab = document.createElement('label');
+      var cb = document.createElement('input');
+      cb.type = 'checkbox';
+      cb.checked = !!k.settings.leagues[l[0]];
+      cb.addEventListener('change', function () { var next = Object.assign({}, k.settings.leagues); next[l[0]] = cb.checked; k.set('leagues', next); });
+      lab.append(cb, document.createTextNode(l[1]));
+      grid.appendChild(lab);
+    });
+    box.appendChild(grid);
+    return box;
+  }
 
   var leagueSel = document.getElementById('league');
   var out = document.getElementById('out');
   var stamp = document.getElementById('stamp');
-  var tab = 'today';
-  var timer = null;
-
-  LEAGUES.slice().sort(function (a, b) { return (followed[b[0]] ? 1 : 0) - (followed[a[0]] ? 1 : 0); })
-    .forEach(function (l) {
-      var o = document.createElement('option');
-      o.value = l[0];
-      o.textContent = l[1];
-      leagueSel.appendChild(o);
-    });
-  try { leagueSel.value = localStorage.getItem('football:league') || leagueSel.options[0].value; } catch (e) {}
-
+  var tab = kit.settings.tab || 'today';
+  var timer = null, clubTimer = null;
+  function codes() { return kit.settings.clubs.map(function (c) { return (c.code || '').toUpperCase(); }); }
+  function paintLeagues() {
+    var followed = kit.settings.leagues, current = leagueSel.value;
+    leagueSel.innerHTML = '';
+    LEAGUES.slice().sort(function (a, b) { return (followed[b[0]] ? 1 : 0) - (followed[a[0]] ? 1 : 0); })
+      .forEach(function (l) {
+        var o = document.createElement('option');
+        o.value = l[0];
+        o.textContent = l[1];
+        leagueSel.appendChild(o);
+      });
+    try { leagueSel.value = current || localStorage.getItem('football:league') || leagueSel.options[0].value; } catch (e) {}
+    if (!leagueSel.value) leagueSel.value = leagueSel.options[0].value;
+    var h = document.querySelector('.ak-tag');
+    if (h) h.textContent = tagline();
+  }
   function esc(s) { var d = document.createElement('div'); d.textContent = s == null ? '' : String(s); return d.innerHTML; }
   function shield(color) {
     return '<svg class="shield" width="20" height="23" viewBox="0 0 40 46" aria-hidden="true"><path d="M4 4h32v16c0 12-8 20-16 23C12 40 4 32 4 20z" fill="' + esc(color) + '"/></svg>';
@@ -151,8 +272,8 @@
     if (diff === -1) return 'Yesterday';
     return d.toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long' });
   }
-  function time(d) { return d.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' }); }
-
+  function time(d) { return d.toLocaleTimeString(kit.settings.clock === '12' ? 'en-US' : 'en-GB', { hour: kit.settings.clock === '12' ? 'numeric' : '2-digit', minute: '2-digit', hour12: kit.settings.clock === '12' }); }
+  function short(d) { return dayLabel(d).replace(/^(\w+day) (\d+) (\w+)$/, function (m, a, b, c) { return a.slice(0, 3) + ' ' + b + ' ' + c.slice(0, 3); }); }
   function matchRow(m) {
     var d = new Date(m.kickoff);
     var state = m.state === 'in'
@@ -161,15 +282,14 @@
     var center = m.score ? esc(m.score.home) + '–' + esc(m.score.away) : 'v';
     var hs = m.score ? +m.score.home : 0, as = m.score ? +m.score.away : 0;
     var done = m.state === 'post';
-    var mine = function (c) { return clubs.indexOf((c.code || '').toUpperCase()) >= 0; };
+    var mine = function (c) { return codes().indexOf((c.code || '').toUpperCase()) >= 0; };
     return '<div class="match">' + state +
       '<span class="team home' + (done && hs > as ? ' win' : '') + '"><span>' + esc(m.home.name) + '</span>' + shield(m.home.color) + '</span>' +
       '<span class="score' + (m.score ? '' : ' soft') + '">' + center + '</span>' +
       '<span class="team' + (done && as > hs ? ' win' : '') + '">' + shield(m.away.color) + '<span>' + esc(m.away.name) + '</span></span>' +
-      (m.venue ? '<span class="venue hide-m">' + esc(m.venue) + (mine(m.home) || mine(m.away) ? ' · your club' : '') + '</span>' : '') +
+      (m.venue && kit.settings.venue ? '<span class="venue hide-m">' + esc(m.venue) + (mine(m.home) || mine(m.away) ? ' · your club' : '') + '</span>' : '') +
       '</div>';
   }
-
   function list(matches, empty) {
     if (!matches.length) return '<div class="empty"><b>' + empty[0] + '</b>' + empty[1] + '</div>';
     var html = '', last = '';
@@ -180,20 +300,63 @@
     });
     return html;
   }
-
   function fail(msg) {
     out.innerHTML = '<div class="empty"><b>Couldn’t load football data</b>' + esc(msg) + '</div>';
+  }
+  function getJSON(url) {
+    return fetch(url).then(function (r) {
+      return r.json().then(function (body) { if (!r.ok) throw new Error(body.error || r.statusText); return body; });
+    });
+  }
+
+  // Your clubs: live now, the last result and the next match for each.
+  function loadClubs() {
+    clearTimeout(clubTimer);
+    var names = kit.settings.clubs.map(function (c) { return c.name; });
+    var box = document.getElementById('clubs');
+    if (!names.length) {
+      box.innerHTML = '<p class="ak-empty">Follow your clubs to see their scores and next matches here.</p>';
+      return;
+    }
+    if (!box.children.length) box.innerHTML = '<p class="ak-empty">Loading your clubs…</p>';
+    getJSON('./api/clubs?clubs=' + encodeURIComponent(names.join(','))).then(function (body) {
+      box.innerHTML = body.clubs.map(clubCard).join('');
+      if (body.clubs.some(function (c) { return c.live; })) clubTimer = setTimeout(loadClubs, 60000);
+    }).catch(function (e) { box.innerHTML = '<p class="ak-empty">Couldn’t load your clubs: ' + esc(e.message) + '</p>'; });
+  }
+  function opponent(m, name) {
+    var home = [m.home.name, m.home.fullName].map(function (x) { return (x || '').toLowerCase(); }).indexOf(name.toLowerCase()) >= 0 ||
+      (m.home.code || '').toLowerCase() === name.toLowerCase();
+    return { them: home ? m.away : m.home, home: home, us: home ? m.score && +m.score.home : m.score && +m.score.away, they: home ? m.score && +m.score.away : m.score && +m.score.home };
+  }
+  function clubCard(c) {
+    var saved = kit.settings.clubs.filter(function (x) { return x.name === c.name; })[0] || club(c.name);
+    var color = (c.team && c.team.color) || saved.color;
+    var lines = '';
+    if (c.live) {
+      var o = opponent(c.live, c.name);
+      lines += '<div class="line"><b>Live</b><span><i class="live-dot"></i>' + o.us + '–' + o.they + ' v ' + esc(o.them.name) + '</span><small>' + esc(c.live.minute || '') + '</small></div>';
+    }
+    if (c.last) {
+      var l = opponent(c.last, c.name), r = l.us > l.they ? 'w' : l.us < l.they ? 'l' : 'd';
+      lines += '<div class="line"><b>Last</b><span><i class="res ' + r + '">' + r.toUpperCase() + '</i>' + l.us + '–' + l.they + ' v ' + esc(l.them.name) + '</span><small>' + esc(short(new Date(c.last.kickoff))) + '</small></div>';
+    }
+    if (c.next) {
+      var n = opponent(c.next, c.name), d = new Date(c.next.kickoff);
+      lines += '<div class="line"><b>Next</b><span>' + esc(n.them.name) + ' (' + (n.home ? 'H' : 'A') + ')</span><small>' + esc(short(d)) + ' · ' + esc(time(d)) + '</small></div>';
+    }
+    if (!lines) lines = '<div class="line"><span>No matches in the next four weeks.</span></div>';
+    return '<article class="club' + (c.live ? ' is-live' : '') + '"><h3>' + shield(color) + esc(c.name) + '</h3>' + lines + '</article>';
   }
 
   function load() {
     var league = leagueSel.value;
     try { localStorage.setItem('football:league', league); } catch (e) {}
     clearTimeout(timer);
+    Array.prototype.forEach.call(document.getElementById('tabs').children, function (x) { x.setAttribute('aria-pressed', String(x.dataset.tab === tab)); });
     var url = tab === 'table' ? './api/table?league=' + league
       : './api/scoreboard?league=' + league + (tab === 'results' ? '&back=14' : tab === 'fixtures' ? '&ahead=28' : '');
-    fetch(url).then(function (r) {
-      return r.json().then(function (body) { if (!r.ok) throw new Error(body.error || r.statusText); return body; });
-    }).then(function (body) {
+    getJSON(url).then(function (body) {
       if (tab === 'table') {
         renderTable(body.rows);
       } else {
@@ -210,7 +373,6 @@
       stamp.textContent = 'Updated ' + time(new Date()) + ' · data from ESPN';
     }).catch(function (e) { fail(e.message); });
   }
-
   function renderTable(rows) {
     if (!rows.length) return fail('No table for this competition yet.');
     var html = '', group = null;
@@ -221,7 +383,7 @@
           '<table><thead><tr><th class="club" colspan="2">Club</th><th>P</th><th class="hide-m">W</th><th class="hide-m">D</th><th class="hide-m">L</th><th>GD</th><th>Pts</th></tr></thead><tbody>';
         group = r.group;
       }
-      var mine = clubs.indexOf((r.club.code || '').toUpperCase()) >= 0;
+      var mine = codes().indexOf((r.club.code || '').toUpperCase()) >= 0;
       html += '<tr' + (mine ? ' class="followed"' : '') + '><td class="pos">' + (r.rank || '') + '</td>' +
         '<td class="club">' + shield(r.club.color) + esc(r.club.name) + '</td><td>' + r.played + '</td>' +
         '<td class="hide-m">' + r.won + '</td><td class="hide-m">' + r.drawn + '</td><td class="hide-m">' + r.lost + '</td>' +
@@ -229,15 +391,16 @@
     });
     out.innerHTML = html + '</tbody></table>';
   }
-
   document.getElementById('tabs').addEventListener('click', function (e) {
     var b = e.target.closest('button');
     if (!b) return;
     tab = b.dataset.tab;
-    Array.prototype.forEach.call(this.children, function (x) { x.setAttribute('aria-pressed', String(x === b)); });
     load();
   });
+  document.getElementById('editclubs').addEventListener('click', function () { kit.openSettings(); });
   leagueSel.addEventListener('change', load);
+  paintLeagues();
+  loadClubs();
   load();
 })();
 </script>
