@@ -1,0 +1,12 @@
+{
+  "manifestVersion": 1,
+  "id": "documents",
+  "name": "Documents",
+  "description": "Merge, convert, edit and sign PDFs",
+  "category": "Tools",
+  "tags": ["pdf", "merge", "split", "compress", "convert", "word", "sign", "edit"],
+  "icon": "icon.svg",
+  "type": "service",
+  "upstream": "http://127.0.0.1:8103",
+  "health": "/health"
+}
