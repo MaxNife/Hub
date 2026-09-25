@@ -1,0 +1,15 @@
+{
+  "manifestVersion": 1,
+  "id": "reaction",
+  "name": "Reaction",
+  "description": "Test your reflexes",
+  "category": "Games",
+  "tags": [
+    "reflex",
+    "speed",
+    "game"
+  ],
+  "icon": "icon.svg",
+  "type": "static",
+  "entry": "dist"
+}

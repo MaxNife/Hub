@@ -1,0 +1,15 @@
+{
+  "manifestVersion": 1,
+  "id": "puzzle",
+  "name": "Puzzle",
+  "description": "Sliding tiles",
+  "category": "Games",
+  "tags": [
+    "15 puzzle",
+    "tiles",
+    "game"
+  ],
+  "icon": "icon.svg",
+  "type": "static",
+  "entry": "dist"
+}
