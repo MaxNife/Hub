@@ -21,5 +21,6 @@ built with `appkit/app-kit.js` (games add `game-kit.js`). Widgets on Hub's
 Home only have settings. Edit the kit in `appkit/`, then run
 `python appkit/sync.py` to update each app's copy.
 
-Documents keeps files on the user's device: its server is stateless and
-never stores uploads or results.
+Files stay on the user's device: Documents' server is stateless, and
+Transcribe deletes each recording once transcribed and each transcript
+once the browser has collected it.

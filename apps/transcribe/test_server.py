@@ -74,6 +74,11 @@ class TranscribeTest(unittest.TestCase):
         self.assertIn("2\n00:00:30,000 --> 00:01:01,500\nThis is Hub.", srt)
         _, txt = self.req("GET", f"/api/jobs/{job['id']}/transcript.txt")
         self.assertEqual(txt, "Hello and welcome. This is Hub. Goodbye.\n")
+        # The recording is gone as soon as it's transcribed; collecting the transcript removes the rest.
+        self.assertEqual(list((pathlib.Path(self.tmp.name) / "uploads").iterdir()), [])
+        self.assertEqual(self.req("DELETE", f"/api/jobs/{job['id']}")[0], 200)
+        self.assertEqual(list((pathlib.Path(self.tmp.name) / "transcripts").iterdir()), [])
+        self.assertEqual(self.req("GET", "/api/jobs")[1], [])
 
     def test_progress_is_visible_while_running(self):
         FakeEngine.gate.clear()
@@ -98,14 +103,35 @@ class TranscribeTest(unittest.TestCase):
         _, bad = self.req("POST", "/api/jobs?name=bad.mp3", b"broken")
         err = self.wait(bad["id"], "error")
         self.assertIn("Couldn't transcribe", err["error"])
+        time.sleep(0.05)
+        self.assertEqual(list((pathlib.Path(self.tmp.name) / "uploads").iterdir()), [])  # failed audio is deleted too
 
     def test_restart_requeues_running_jobs(self):
         FakeEngine.gate.clear()
         _, job = self.req("POST", "/api/jobs?name=a.wav", b"\x00" * 10)
         self.wait(job["id"], "running")
-        again = ts.Jobs(pathlib.Path(self.tmp.name), FakeEngine())  # simulates a restart
+        class Idle(FakeEngine):  # so the restarted worker doesn't pick the job straight back up
+            def available(self):
+                return False
+        again = ts.Jobs(pathlib.Path(self.tmp.name), Idle())  # simulates a restart
         self.assertEqual(again.get(job["id"])["status"], "queued")
         FakeEngine.gate.set()
+
+    def test_sweep_deletes_uncollected_and_orphans(self):
+        _, job = self.req("POST", "/api/jobs?name=a.wav", b"\x00" * 10)
+        self.wait(job["id"], "done")
+        root = pathlib.Path(self.tmp.name)
+        import os
+        for f in (root / "uploads" / "leftover.wav", root / "transcripts" / "gone.json", root / "uploads" / "arriving.wav"):
+            f.write_bytes(b"x")
+        for f in (root / "uploads" / "leftover.wav", root / "transcripts" / "gone.json"):
+            os.utime(f, (time.time() - 7200,) * 2)
+        ts.jobs.sweep()  # recent: the transcript waits to be collected; an upload still arriving is left alone
+        self.assertEqual(self.req("GET", f"/api/jobs/{job['id']}")[1]["status"], "done")
+        self.assertEqual(sorted(p.name for p in root.rglob("*.*") if p.parent.name in ("uploads", "transcripts")), sorted(["arriving.wav", f"{job['id']}.json"]))
+        ts.jobs.sweep(now=time.time() + ts.KEEP_SECONDS + 60)  # a week later, never collected
+        self.assertEqual(self.req("GET", "/api/jobs")[1], [])
+        self.assertEqual(list((root / "transcripts").iterdir()), [])
 
     def test_health_and_page(self):
         code, health = self.req("GET", "/health")

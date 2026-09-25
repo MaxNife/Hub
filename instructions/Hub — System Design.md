@@ -143,8 +143,10 @@ Pick `static` whenever an app can run entirely in the browser; use `service` onl
 | Random | Dice, coin, number, pick one; saved lists; history | Dice type, total, no repeats, vibrate, history |
 | Name generator | New names, starred | How many, a word to include, starting letter, copy format |
 | Football | Your clubs (live, last, next), matches, tables | Clubs, leagues, opening view, 12/24 h, stadiums |
-| Transcribe | Totals, drop zone, your recordings with search | Language, download format, open when ready, notify, tidy-up |
+| Transcribe | Totals, drop zone, your transcripts with search | Language, download format, open when ready, notify, how long to keep transcripts |
 | Documents | Unsaved edits, recent files, your tools, all tools | Keep files, auto-download, compression, page size, signature |
+
+**Your files stay yours.** Files belong on the user's device, not the Hub machine. Documents' server is stateless (below). Transcribe has to hold a recording while it works, so it deletes the recording as soon as transcription ends (done or failed); the transcript waits only until the browser collects it into IndexedDB, then it is deleted too. Anything never collected is deleted after `TRANSCRIBE_KEEP_HOURS` (default a week), and stray files are swept hourly.
 
 **Games.** Memory, Reaction and Puzzle share a game kit (`appkit/game-kit.js`, built on the app kit and copied into each game by `appkit/sync.py`): a home screen with Continue, New game, difficulty and stats, and settings for sound effects, music, volume and game options. Each game saves the game in progress in its own keys (`memory:progress`, `reaction:round`, `puzzle:save`). Hub opens a game at `#continue` or `#new`: `/open/{id}#continue` passes the hash to the iframe, which is how Home's Resume button reopens a Memory game where it was left.
 

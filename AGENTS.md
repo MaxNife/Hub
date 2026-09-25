@@ -12,8 +12,10 @@ environment gotchas: `memory.md`.
   own. Build them with `appkit/app-kit.js` (games add
   `appkit/game-kit.js`), then run `python appkit/sync.py`.
 - An app's settings are separate from its widget's settings.
-- Documents keeps files on the user's device only. Its server must stay
-  stateless: never write uploads or results to the server.
+- User files belong on the user's device. Documents' server must stay
+  stateless: never write uploads or results to it. Transcribe keeps a
+  recording only while transcribing it, and a transcript only until the
+  browser collects it; both are then deleted from the server.
 
 ## Commits
 
