@@ -46,40 +46,48 @@
   .seg button.active, .seg button[aria-pressed="true"] { background: var(--ink); color: var(--paper); }
   @media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation-duration: .01ms !important; transition-duration: .01ms !important; } }
 </style>
+<link rel="stylesheet" href="./game-kit.css">
 <style>
   html, body { height: 100%; }
-  body { padding: 20px 16px; min-height: 100dvh; }
+  body { padding: 16px; min-height: 100dvh; }
   .wrap { max-width: 480px; margin: 0 auto; }
-  .top { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
-  .stats { display: flex; gap: 8px; margin: 16px 0; }
+  .top { display: flex; align-items: center; gap: 10px; }
+  .top h1 { flex-grow: 1; font-size: 28px; }
+  .level { font-family: var(--body); font-size: 13px; font-weight: 600; color: var(--muted); letter-spacing: 0; margin-left: 6px; }
+  button.restart { height: 36px; padding: 0 16px; border: 1px solid var(--line); border-radius: 999px; background: var(--surface); font-size: 13px; font-weight: 600; cursor: pointer; }
+  .stats { display: flex; gap: 8px; margin: 12px 0 16px; }
   .stat { flex: 1; padding: 6px 4px; border: 1px solid var(--line); border-radius: 12px; background: var(--surface); text-align: center; }
   .stat b { display: block; font-size: 17px; }
   .stat small { font-size: 11px; color: var(--muted); }
-  .board { position: relative; display: grid; gap: 8px; aspect-ratio: 1; }
+  .board { position: relative; display: grid; gap: 8px; aspect-ratio: 1; max-height: calc(100dvh - 200px); margin: 0 auto; }
+  .board.n5 { gap: 6px; }
   .tile {
     display: flex; align-items: center; justify-content: center; border: none; border-radius: 14px;
     background: var(--surface); box-shadow: inset 0 0 0 1px var(--line);
-    font-family: var(--display); font-size: clamp(22px, 7vmin, 40px); font-weight: 700; cursor: pointer;
+    font-family: var(--display); font-size: clamp(20px, 7vmin, 40px); font-weight: 700; cursor: pointer;
     transition: transform .12s ease, background-color .2s;
   }
+  .n5 .tile { border-radius: 11px; font-size: clamp(16px, 5.5vmin, 32px); }
   .tile:hover { transform: scale(0.97); }
   .tile.home { background: color-mix(in srgb, #43ddb9 22%, var(--surface)); box-shadow: inset 0 0 0 1px color-mix(in srgb, #0e8a74 45%, var(--line)); }
+  .colours .tile { color: #fff; text-shadow: 0 1px 2px rgba(0,0,0,.35); box-shadow: none; background: var(--tint); }
+  .colours .tile.home { background: var(--tint); box-shadow: inset 0 0 0 3px rgba(255,255,255,.75); }
   .tile.gap { visibility: hidden; }
+  .tile.nope { animation: nope .25s ease; }
+  @keyframes nope { 25% { transform: translateX(-3px); } 75% { transform: translateX(3px); } }
   .win { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px; text-align: center; border-radius: 18px; background: color-mix(in srgb, var(--paper) 94%, transparent); animation: pop .4s cubic-bezier(.34,1.56,.64,1) both; }
   .win h2 { margin: 0; font-family: var(--display); font-size: 36px; letter-spacing: -0.03em; }
   .win p { margin: 0 0 8px; color: var(--muted); }
+  .win .actions { display: flex; gap: 10px; }
   @keyframes pop { from { opacity: 0; transform: scale(.94); } }
   [hidden] { display: none !important; }
 </style>
 </head>
 <body>
 <div class="wrap">
-  <div class="top">
-    <h1>Puzzle</h1>
-    <div class="seg" role="group" aria-label="Board size">
-      <button type="button" data-size="3">3 × 3</button>
-      <button type="button" data-size="4">4 × 4</button>
-    </div>
+  <div class="top" id="top">
+    <h1>Puzzle<span class="level" id="level"></span></h1>
+    <button class="restart" id="shuffle" type="button">Shuffle</button>
   </div>
   <div class="stats">
     <div class="stat"><b id="moves">0</b><small>Moves</small></div>
@@ -87,26 +95,42 @@
     <div class="stat"><b id="best">–</b><small>Best</small></div>
   </div>
   <div class="board" id="board" role="grid" aria-label="Sliding puzzle. Use the arrow keys or tap a tile next to the gap.">
-    <div class="win" id="win" hidden><h2>Solved!</h2><p id="winline"></p><button class="ink-btn" id="again" type="button">Shuffle again</button></div>
+    <div class="win" id="win" hidden><h2>Solved!</h2><p id="winline"></p>
+      <div class="actions"><button class="pill-btn" id="tomenu" type="button">Menu</button><button class="ink-btn" id="again" type="button">Shuffle again</button></div>
+    </div>
   </div>
-  <p class="sub" style="margin-top:16px">Slide the tiles into order. Arrow keys move the tile next to the gap.</p>
-  <button class="pill-btn" id="shuffle" type="button">Shuffle</button>
 </div>
+<script src="./game-kit.js"></script>
 <script>
 (function () {
   'use strict';
+  var SAVE_KEY = 'puzzle:save', SOLVED_KEY = 'puzzle:solved';
   var board = document.getElementById('board'), win = document.getElementById('win');
-  var n = 4, tiles = [], moves = 0, secs = 0, timer = null, started = false;
-  try { n = parseInt(localStorage.getItem('puzzle:size') || '4', 10) === 3 ? 3 : 4; } catch (e) {}
+  var n = 4, tiles = [], moves = 0, secs = 0, timer = null;
 
-  function bestKey() { return 'puzzle:best:' + n; }
-  function best() { try { var v = JSON.parse(localStorage.getItem(bestKey()) || 'null'); return v && v.moves ? v : null; } catch (e) { return null; } }
+  function bestKey(size) { return 'puzzle:best:' + size; }
+  function best(size) { try { var v = JSON.parse(localStorage.getItem(bestKey(size || n)) || 'null'); return v && v.moves ? v : null; } catch (e) { return null; } }
+  function num(key) { try { var v = parseInt(localStorage.getItem(key) || '', 10); return isFinite(v) ? v : null; } catch (e) { return null; } }
   function fmt(s) { return Math.floor(s / 60) + ':' + String(s % 60).padStart(2, '0'); }
+  function stopClock() { if (timer) { clearInterval(timer); timer = null; } }
   function paintStats() {
     document.getElementById('moves').textContent = moves;
     document.getElementById('time').textContent = fmt(secs);
     var b = best();
     document.getElementById('best').textContent = b ? b.moves + ' · ' + fmt(b.secs) : '–';
+  }
+  function save() {
+    try {
+      if (moves > 0 && !solved()) localStorage.setItem(SAVE_KEY, JSON.stringify({ n: n, tiles: tiles, moves: moves, secs: secs }));
+      else localStorage.removeItem(SAVE_KEY);
+    } catch (e) {}
+  }
+  function saved() {
+    try {
+      var p = JSON.parse(localStorage.getItem(SAVE_KEY) || 'null');
+      if (p && [3, 4, 5].indexOf(p.n) >= 0 && Array.isArray(p.tiles) && p.tiles.length === p.n * p.n && p.tiles.indexOf(0) >= 0) return p;
+    } catch (e) {}
+    return null;
   }
   function neighbours(i) {
     var r = Math.floor(i / n), c = i % n, out = [];
@@ -117,7 +141,8 @@
     return out;
   }
   // Shuffle with random legal moves, so every board is solvable.
-  function shuffle() {
+  function shuffle(size) {
+    n = size || n;
     tiles = [];
     for (var i = 1; i < n * n; i++) tiles.push(i);
     tiles.push(0);
@@ -127,9 +152,10 @@
       var pick = opts[Math.floor(Math.random() * opts.length)];
       tiles[gap] = tiles[pick]; tiles[pick] = 0; prev = gap; gap = pick;
     }
-    if (solved()) return shuffle();
-    moves = 0; secs = 0; started = false;
-    clearInterval(timer);
+    if (solved()) return shuffle(n);
+    moves = 0; secs = 0;
+    stopClock();
+    save();
     win.hidden = true;
     render();
   }
@@ -137,38 +163,107 @@
     for (var i = 0; i < n * n - 1; i++) if (tiles[i] !== i + 1) return false;
     return true;
   }
+  // Colours mode: each tile is tinted by where it belongs, so rows read as bands.
+  function tint(v) {
+    var r = Math.floor((v - 1) / n), c = (v - 1) % n;
+    return 'hsl(' + Math.round(205 - (r / Math.max(1, n - 1)) * 195) + ' 46% ' + (52 - (c / Math.max(1, n - 1)) * 16) + '%)';
+  }
   function render() {
     board.style.gridTemplateColumns = 'repeat(' + n + ', 1fr)';
+    board.classList.toggle('n5', n === 5);
+    board.classList.toggle('colours', kit.settings.style === 'colours');
+    document.getElementById('level').textContent = n + ' × ' + n;
     Array.prototype.slice.call(board.querySelectorAll('.tile')).forEach(function (t) { t.remove(); });
     tiles.forEach(function (v, i) {
       var b = document.createElement('button');
       b.type = 'button';
       b.className = 'tile' + (v === 0 ? ' gap' : v === i + 1 ? ' home' : '');
       b.textContent = v || '';
+      if (v) b.style.setProperty('--tint', tint(v));
       b.setAttribute('aria-label', v ? 'Tile ' + v : 'Gap');
-      b.addEventListener('click', function () { move(i); });
+      b.addEventListener('click', function () { move(i, b); });
       board.insertBefore(b, win);
     });
-    document.querySelectorAll('[data-size]').forEach(function (b) { b.setAttribute('aria-pressed', String(+b.dataset.size === n)); });
     paintStats();
   }
-  function move(i) {
+  function move(i, el) {
+    if (!win.hidden || !kit.playing) return;
     var gap = tiles.indexOf(0);
-    if (neighbours(gap).indexOf(i) < 0 || !win.hidden) return;
-    if (!started) { started = true; timer = setInterval(function () { secs++; paintStats(); }, 1000); }
+    if (neighbours(gap).indexOf(i) < 0) {
+      if (el && i !== gap) { kit.sfx('bad'); el.classList.remove('nope'); void el.offsetWidth; el.classList.add('nope'); }
+      return;
+    }
+    if (!timer) timer = setInterval(function () { secs++; paintStats(); }, 1000);
     tiles[gap] = tiles[i]; tiles[i] = 0; moves++;
+    kit.sfx('move');
     render();
     if (solved()) finish();
+    else save();
   }
   function finish() {
-    clearInterval(timer);
+    stopClock();
+    save();
+    kit.sfx('win');
+    kit.played();
+    try { localStorage.setItem(SOLVED_KEY, String((num(SOLVED_KEY) || 0) + 1)); } catch (e) {}
     var b = best(), isBest = !b || moves < b.moves || (moves === b.moves && secs < b.secs);
-    if (isBest) { try { localStorage.setItem(bestKey(), JSON.stringify({ moves: moves, secs: secs })); } catch (e) {} }
+    if (isBest) { try { localStorage.setItem(bestKey(n), JSON.stringify({ moves: moves, secs: secs })); } catch (e) {} }
     document.getElementById('winline').textContent = moves + ' moves · ' + fmt(secs) + (isBest ? ' · new best!' : '');
     win.hidden = false;
     paintStats();
   }
+
+  var kit = GameKit.create({
+    id: 'puzzle',
+    title: 'Puzzle',
+    tagline: 'Slide the tiles back into order.',
+    art: '<svg viewBox="0 0 64 64"><defs><linearGradient id="pg" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#43DDB9"/><stop offset="1" stop-color="#0E8A74"/></linearGradient></defs>' +
+      '<rect width="64" height="64" rx="16" fill="url(#pg)"/><rect x="12" y="12" width="18" height="18" rx="5" fill="#fff"/><rect x="34" y="12" width="18" height="18" rx="5" fill="#FFD34D"/>' +
+      '<rect x="12" y="34" width="18" height="18" rx="5" fill="#FF5C8A"/><rect x="34" y="34" width="18" height="18" rx="5" fill="#15395E"/></svg>',
+    howTo: [
+      'Tap a tile next to the gap to slide it in, or use the arrow keys.',
+      'Put the tiles in order, left to right and top to bottom, with the gap last.',
+      'Tiles in the right place light up. Fewest moves wins, then fastest time.',
+      'Try Colours in Settings: tiles are tinted by the row they belong in.',
+    ],
+    difficulties: [
+      { id: '3', label: '3 × 3', detail: 'Warm-up' },
+      { id: '4', label: '4 × 4', detail: 'Classic' },
+      { id: '5', label: '5 × 5', detail: 'Marathon' },
+    ],
+    defaultDifficulty: '4',
+    options: [{ key: 'style', label: 'Tiles', def: 'numbers', choices: [['numbers', 'Numbers'], ['colours', 'Colours']] }],
+    stats: function (k) {
+      var b = best(+k.settings.difficulty);
+      return [
+        { label: 'Best · ' + k.settings.difficulty + ' × ' + k.settings.difficulty, value: b ? b.moves + ' moves' : '–' },
+        { label: 'Best time', value: b ? fmt(b.secs) : '–' },
+        { label: 'Puzzles solved', value: num(SOLVED_KEY) || 0 },
+      ];
+    },
+    saved: function () {
+      var p = saved();
+      return p && { label: p.n + ' × ' + p.n + ' · ' + p.moves + ' moves · ' + fmt(p.secs || 0) };
+    },
+    onNew: function (s) { shuffle(+s.difficulty || 4); },
+    onContinue: function (s) {
+      var p = saved();
+      if (!p) return shuffle(+s.difficulty || 4);
+      n = p.n; tiles = p.tiles; moves = p.moves || 0; secs = p.secs || 0;
+      stopClock();
+      win.hidden = true;
+      render();
+    },
+    onPause: function () { stopClock(); save(); },
+    onResetStats: function () {
+      [3, 4, 5].forEach(function (s) { try { localStorage.removeItem(bestKey(s)); } catch (e) {} });
+      try { localStorage.removeItem(SOLVED_KEY); } catch (e) {}
+      paintStats();
+    },
+  });
+  document.getElementById('top').prepend(kit.menuButton());
   document.addEventListener('keydown', function (e) {
+    if (!kit.playing || !tiles.length) return;
     var gap = tiles.indexOf(0), r = Math.floor(gap / n), c = gap % n, t = -1;
     if (e.key === 'ArrowUp' && r < n - 1) t = gap + n;      // tile below slides up
     if (e.key === 'ArrowDown' && r > 0) t = gap - n;
@@ -176,16 +271,9 @@
     if (e.key === 'ArrowRight' && c > 0) t = gap - 1;
     if (t >= 0) { e.preventDefault(); move(t); }
   });
-  document.querySelectorAll('[data-size]').forEach(function (b) {
-    b.addEventListener('click', function () {
-      n = +b.dataset.size;
-      try { localStorage.setItem('puzzle:size', String(n)); } catch (e) {}
-      shuffle();
-    });
-  });
-  document.getElementById('shuffle').addEventListener('click', shuffle);
-  document.getElementById('again').addEventListener('click', shuffle);
-  shuffle();
+  document.getElementById('shuffle').addEventListener('click', function () { kit.sfx('tap'); shuffle(); });
+  document.getElementById('again').addEventListener('click', function () { shuffle(); });
+  document.getElementById('tomenu').addEventListener('click', function () { kit.showHome(); });
 })();
 </script>
 </body>

@@ -46,10 +46,15 @@
   .seg button.active, .seg button[aria-pressed="true"] { background: var(--ink); color: var(--paper); }
   @media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation-duration: .01ms !important; transition-duration: .01ms !important; } }
 </style>
+<link rel="stylesheet" href="./game-kit.css">
 <style>
   html, body { height: 100%; }
-  body { display: flex; flex-direction: column; padding: 24px 16px; min-height: 100dvh; }
+  body { display: flex; flex-direction: column; padding: 16px; min-height: 100dvh; }
   .wrap { width: 100%; max-width: 640px; margin: 0 auto; display: flex; flex-direction: column; flex: 1; min-height: 0; }
+  .top { display: flex; align-items: center; gap: 10px; }
+  .top h1 { flex-grow: 1; font-size: 28px; }
+  .level { font-family: var(--body); font-size: 13px; font-weight: 600; color: var(--muted); letter-spacing: 0; margin-left: 6px; }
+  .sub { margin: 8px 0 16px; }
   .stats { display: flex; gap: 8px; margin-bottom: 16px; }
   .stat { flex: 1; padding: 8px 4px; border: 1px solid var(--line); border-radius: 12px; background: var(--surface); text-align: center; }
   .stat b { display: block; font-size: 18px; }
@@ -63,6 +68,8 @@
   .pad b { font-family: var(--display); font-size: clamp(40px, 9vw, 72px); font-weight: 700; letter-spacing: -0.04em; line-height: 1; }
   .pad span { color: var(--muted); font-size: 16px; }
   .pad.wait { background: color-mix(in srgb, var(--bad) 14%, var(--surface)); }
+  .pad.decoy { background: #f2a93b; box-shadow: none; }
+  .pad.decoy b, .pad.decoy span { color: #2a1a00; }
   .pad.go { background: var(--live); box-shadow: none; }
   .pad.go b, .pad.go span { color: var(--live-ink); }
   .pad.early { background: color-mix(in srgb, var(--bad) 22%, var(--surface)); }
@@ -73,8 +80,8 @@
 </head>
 <body>
 <div class="wrap">
-  <h1>Reaction</h1>
-  <p class="sub">Tap the moment it turns green. Five tries make a round.</p>
+  <div class="top" id="top"><h1>Reaction<span class="level" id="level"></span></h1></div>
+  <p class="sub" id="sub"></p>
   <div class="stats">
     <div class="stat"><b id="last">–</b><small>Last</small></div>
     <div class="stat"><b id="avg">–</b><small>Round average</small></div>
@@ -83,54 +90,170 @@
   <button class="pad" id="pad" type="button" aria-live="assertive"><b id="big">Tap to start</b><span id="small">Or press Space</span></button>
   <div class="history" id="history" aria-label="This round"></div>
 </div>
+<script src="./game-kit.js"></script>
 <script>
 (function () {
   'use strict';
-  var BEST_KEY = 'reaction:best';
+  var BEST_KEY = 'reaction:best', AVG_KEY = 'reaction:bestavg', ROUNDS_KEY = 'reaction:rounds', ROUND_KEY = 'reaction:round';
+  // wait range in ms, and the chance of an amber decoy before green
+  var LEVELS = {
+    relaxed: { label: 'Relaxed', min: 1800, span: 2600, decoy: 0 },
+    classic: { label: 'Classic', min: 1200, span: 2800, decoy: 0 },
+    hard: { label: 'Hard', min: 800, span: 2700, decoy: 0.45 },
+  };
   var pad = document.getElementById('pad'), big = document.getElementById('big'), small = document.getElementById('small');
-  var state = 'idle', timer = null, shownAt = 0, round = [];
+  var state = 'idle', timer = null, shownAt = 0, round = [], tries = 5, level = 'classic';
 
-  function best() { try { var v = parseInt(localStorage.getItem(BEST_KEY) || '', 10); return isFinite(v) ? v : null; } catch (e) { return null; } }
+  function num(key) { try { var v = parseInt(localStorage.getItem(key) || '', 10); return isFinite(v) ? v : null; } catch (e) { return null; } }
+  function put(key, v) { try { localStorage.setItem(key, String(v)); } catch (e) {} }
+  function mean(a) { return Math.round(a.reduce(function (s, c) { return s + c; }, 0) / a.length); }
   function paint() {
-    var b = best();
+    var b = num(BEST_KEY);
     document.getElementById('best').textContent = b === null ? '–' : b + ' ms';
     document.getElementById('last').textContent = round.length ? round[round.length - 1] + ' ms' : '–';
-    document.getElementById('avg').textContent = round.length ? Math.round(round.reduce(function (a, c) { return a + c; }, 0) / round.length) + ' ms' : '–';
+    document.getElementById('avg').textContent = round.length ? mean(round) + ' ms' : '–';
+    document.getElementById('level').textContent = LEVELS[level].label;
+    document.getElementById('sub').textContent = 'Tap the moment it turns green. ' + tries + ' tries make a round.' +
+      (LEVELS[level].decoy ? ' Amber is a trick.' : '');
     var low = Math.min.apply(null, round);
     document.getElementById('history').innerHTML = round.map(function (ms) {
       return '<span' + (ms === low ? ' class="best"' : '') + '>' + ms + ' ms</span>';
     }).join('');
   }
   function show(cls, b, s) { pad.className = 'pad ' + cls; big.textContent = b; small.textContent = s; }
-
+  function saveRound() {
+    try {
+      if (round.length && round.length < tries) localStorage.setItem(ROUND_KEY, JSON.stringify({ tries: round, of: tries, level: level }));
+      else localStorage.removeItem(ROUND_KEY);
+    } catch (e) {}
+  }
+  function savedRound() {
+    try {
+      var r = JSON.parse(localStorage.getItem(ROUND_KEY) || 'null');
+      if (r && Array.isArray(r.tries) && r.tries.length && r.tries.length < r.of && LEVELS[r.level]) return r;
+    } catch (e) {}
+    return null;
+  }
+  function start(s, r) {
+    clearTimeout(timer);
+    level = LEVELS[s.difficulty] ? s.difficulty : 'classic';
+    tries = +s.tries || 5;
+    round = [];
+    if (r) { level = r.level; tries = r.of; round = r.tries.slice(); }
+    saveRound();
+    state = 'idle';
+    show('', r ? 'Tap to carry on' : 'Tap to start', 'Try ' + (round.length + 1) + ' of ' + tries + ' · or press Space');
+    paint();
+    pad.focus({ preventScroll: true });
+  }
+  function green() {
+    state = 'go';
+    shownAt = performance.now();
+    kit.sfx('go');
+    show('go', 'Tap!', '');
+  }
   function press() {
+    if (!kit.playing) return;
+    var L = LEVELS[level];
     if (state === 'idle' || state === 'result' || state === 'early') {
-      if (round.length >= 5) round = [];
+      if (round.length >= tries) { round = []; paint(); }
       state = 'wait';
+      kit.sfx('tap');
       show('wait', 'Wait for green…', 'Don’t tap yet');
-      timer = setTimeout(function () {
-        state = 'go';
-        shownAt = performance.now();
-        show('go', 'Tap!', '');
-      }, 1200 + Math.random() * 2800);
-    } else if (state === 'wait') {
+      var wait = L.min + Math.random() * L.span;
+      if (Math.random() < L.decoy) {
+        // Flash amber part-way through the wait, then carry on to green.
+        var at = wait * (0.35 + Math.random() * 0.3);
+        timer = setTimeout(function () {
+          state = 'decoy';
+          show('decoy', 'Not yet…', '');
+          timer = setTimeout(function () {
+            state = 'wait';
+            show('wait', 'Wait for green…', 'Don’t tap yet');
+            timer = setTimeout(green, wait - at);
+          }, 450);
+        }, at);
+      } else {
+        timer = setTimeout(green, wait);
+      }
+    } else if (state === 'wait' || state === 'decoy') {
       clearTimeout(timer);
+      kit.sfx('bad');
+      show('early', state === 'decoy' ? 'Tricked you' : 'Too soon', 'Tap to try again');
       state = 'early';
-      show('early', 'Too soon', 'Tap to try again');
     } else if (state === 'go') {
       var ms = Math.round(performance.now() - shownAt);
       round.push(ms);
-      var b = best();
-      if (b === null || ms < b) { try { localStorage.setItem(BEST_KEY, String(ms)); } catch (e) {} }
+      var b = num(BEST_KEY);
+      if (b === null || ms < b) put(BEST_KEY, ms);
       state = 'result';
-      var done = round.length >= 5;
-      show('', ms + ' ms', done ? 'Round done. Tap for a new round' : 'Tap for try ' + (round.length + 1) + ' of 5');
+      var done = round.length >= tries;
+      if (done) {
+        var avg = mean(round), ba = num(AVG_KEY);
+        var newAvg = ba === null || avg < ba;
+        if (newAvg) put(AVG_KEY, avg);
+        put(ROUNDS_KEY, (num(ROUNDS_KEY) || 0) + 1);
+        kit.sfx('win');
+        kit.played();
+        show('', ms + ' ms', 'Round average ' + avg + ' ms' + (newAvg ? ', a new best!' : '') + ' · Tap for a new round');
+      } else {
+        kit.sfx('match');
+        show('', ms + ' ms', 'Tap for try ' + (round.length + 1) + ' of ' + tries);
+      }
+      saveRound();
       paint();
     }
   }
+
+  var kit = GameKit.create({
+    id: 'reaction',
+    title: 'Reaction',
+    tagline: 'How fast are your fingers, really?',
+    art: '<svg viewBox="0 0 64 64"><defs><linearGradient id="rg" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#FFE066"/><stop offset="1" stop-color="#FF9A1F"/></linearGradient></defs>' +
+      '<rect width="64" height="64" rx="16" fill="url(#rg)"/><circle cx="32" cy="32" r="15" fill="#F0336A"/><circle cx="32" cy="32" r="9.5" fill="#fff"/><circle cx="32" cy="32" r="4.5" fill="#F0336A"/></svg>',
+    howTo: [
+      'Tap the pad (or press Space) and wait while it is red.',
+      'The instant it turns green, tap as fast as you can.',
+      'Tap too early and that try doesn’t count. On Hard, amber flashes are decoys.',
+      'A round is a few tries; your average goes on the board.',
+    ],
+    difficulties: [
+      { id: 'relaxed', label: 'Relaxed', detail: 'Longer waits' },
+      { id: 'classic', label: 'Classic', detail: 'The original' },
+      { id: 'hard', label: 'Hard', detail: 'Amber decoys' },
+    ],
+    defaultDifficulty: 'classic',
+    options: [{ key: 'tries', label: 'Tries per round', def: '5', choices: [['3', '3'], ['5', '5'], ['10', '10']] }],
+    stats: function () {
+      var b = num(BEST_KEY), a = num(AVG_KEY);
+      return [
+        { label: 'Fastest tap', value: b === null ? '–' : b + ' ms' },
+        { label: 'Best average', value: a === null ? '–' : a + ' ms' },
+        { label: 'Rounds played', value: num(ROUNDS_KEY) || 0 },
+      ];
+    },
+    saved: function () {
+      var r = savedRound();
+      return r && { label: LEVELS[r.level].label + ' · try ' + (r.tries.length + 1) + ' of ' + r.of + ' · average ' + mean(r.tries) + ' ms' };
+    },
+    onNew: function (s) { start(s, null); },
+    onContinue: function (s) { start(s, savedRound()); },
+    onPause: function () {
+      if (state === 'wait' || state === 'decoy' || state === 'go') {
+        clearTimeout(timer);
+        state = 'idle';
+        show('', 'Paused', 'Tap to carry on');
+      }
+    },
+    onResetStats: function () {
+      [BEST_KEY, AVG_KEY, ROUNDS_KEY].forEach(function (k) { try { localStorage.removeItem(k); } catch (e) {} });
+      paint();
+    },
+  });
+  document.getElementById('top').prepend(kit.menuButton());
   pad.addEventListener('pointerdown', function (e) { e.preventDefault(); press(); });
   pad.addEventListener('keydown', function (e) { if (e.key === ' ' || e.key === 'Enter') { e.preventDefault(); press(); } });
-  document.addEventListener('keydown', function (e) { if (e.key === ' ' && document.activeElement !== pad) { e.preventDefault(); press(); } });
+  document.addEventListener('keydown', function (e) { if (e.key === ' ' && kit.playing && document.activeElement !== pad) { e.preventDefault(); press(); } });
   paint();
 })();
 </script>

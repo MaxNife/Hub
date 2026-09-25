@@ -162,6 +162,16 @@ await t('all static apps serve', async () => {
   }
 });
 
+await t('games load the shared game kit', async () => {
+  for (const id of ['memory', 'reaction', 'puzzle']) {
+    const page = (await req('GET', `/apps/${id}/`)).text;
+    assert.ok(page.includes('./game-kit.js') && page.includes('GameKit.create'), id + ' uses the kit');
+    const kit = await req('GET', `/apps/${id}/game-kit.js`);
+    assert.strictEqual(kit.status, 200, id + ' serves game-kit.js');
+    assert.strictEqual(kit.text, fs.readFileSync('appkit/game-kit.js', 'utf8'), id + ' kit is in sync (python appkit/sync.py)');
+  }
+});
+
 await t('writes need the X-Hub-Request header', async () => {
   const r = await fetch(BASE + '/api/apps/converter/pin', { method: 'POST' });
   assert.strictEqual(r.status, 403);
