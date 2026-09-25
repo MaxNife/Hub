@@ -8,6 +8,8 @@ import (
 	"strconv"
 	"strings"
 
+	"hub/internal/health"
+	"hub/internal/integrations"
 	"hub/internal/registry"
 	"hub/internal/store"
 )
@@ -16,6 +18,13 @@ type Handler struct {
 	Store    *store.Store
 	Registry *registry.Registry
 	AppsDir  string
+	Health   *health.Checker
+
+	Status      *integrations.Manager
+	Weather     *integrations.Weather
+	GeocodeURL  string // https://geocoding-api.open-meteo.com
+	CalendarSet bool   // HUB_CALENDAR_ICS configured (the link itself stays secret)
+	AuthEnabled bool
 }
 
 func writeJSON(w http.ResponseWriter, code int, v any) {
@@ -41,9 +50,25 @@ func (h *Handler) withState(ctx context.Context, apps []registry.App) []registry
 		}
 		a.Installed = st.Installed
 		a.Pinned = st.Pinned
+		h.addHealth(&a)
 		out = append(out, a)
 	}
 	return out
+}
+
+// addHealth copies the latest check onto a service app (nil until checked).
+func (h *Handler) addHealth(a *registry.App) {
+	if a.Type != "service" || h.Health == nil {
+		return
+	}
+	if res, ok := h.Health.Get(a.ID); ok {
+		okv := res.OK
+		at := res.CheckedAt
+		a.HealthOK = &okv
+		a.HealthError = res.Error
+		a.HealthLatencyMS = &res.LatencyMS
+		a.HealthCheckedAt = &at
+	}
 }
 
 func (h *Handler) Routes(mux *http.ServeMux) {
@@ -117,6 +142,19 @@ func (h *Handler) Routes(mux *http.ServeMux) {
 		writeJSON(w, 200, map[string]string{"status": "ok"})
 	})
 
+	// Run a service app's health check now (the offline screen's Retry).
+	mux.HandleFunc("POST /api/apps/{id}/check", func(w http.ResponseWriter, r *http.Request) {
+		if err := h.requireApp(w, r); err != nil {
+			return
+		}
+		a, _ := h.Registry.Get(r.PathValue("id"))
+		if a.Type != "service" || h.Health == nil {
+			writeJSON(w, 200, map[string]any{"ok": true})
+			return
+		}
+		writeJSON(w, 200, h.Health.Check(r.Context(), a))
+	})
+
 	mux.HandleFunc("GET /api/recent", func(w http.ResponseWriter, r *http.Request) {
 		limit, _ := strconv.Atoi(r.URL.Query().Get("limit"))
 		if limit <= 0 {
@@ -165,7 +203,18 @@ func (h *Handler) Routes(mux *http.ServeMux) {
 		for name, n := range counts {
 			out = append(out, cat{Name: name, Count: n})
 		}
-		sort.Slice(out, func(i, j int) bool { return out[i].Name < out[j].Name })
+		order := h.categoryOrder(r.Context())
+		sort.Slice(out, func(i, j int) bool {
+			oi, iok := order[out[i].Name]
+			oj, jok := order[out[j].Name]
+			switch {
+			case iok && jok:
+				return oi < oj
+			case iok != jok:
+				return iok
+			}
+			return out[i].Name < out[j].Name
+		})
 		if out == nil {
 			out = []cat{}
 		}
@@ -173,7 +222,90 @@ func (h *Handler) Routes(mux *http.ServeMux) {
 	})
 
 	mux.HandleFunc("GET /api/status", func(w http.ResponseWriter, r *http.Request) {
-		writeJSON(w, 200, map[string]any{"time": nil, "weather": nil, "nextEvent": nil, "health": nil})
+		_, weatherSet, _ := h.weatherSettings(r.Context())
+		writeJSON(w, 200, map[string]any{
+			"weather":   h.entry("weather", weatherSet),
+			"nextEvent": h.entry("calendar", h.CalendarSet),
+			"health":    h.healthSummary(r.Context()),
+		})
+	})
+
+	mux.HandleFunc("GET /api/settings", func(w http.ResponseWriter, r *http.Request) {
+		ws, ok, _ := h.weatherSettings(r.Context())
+		var weather any
+		if ok {
+			weather = ws
+		}
+		var order []string
+		_, _ = h.Store.GetSetting(r.Context(), "categoryOrder", &order)
+		if order == nil {
+			order = []string{}
+		}
+		writeJSON(w, 200, map[string]any{
+			"weather":            weather,
+			"calendarConfigured": h.CalendarSet,
+			"categoryOrder":      order,
+			"authEnabled":        h.AuthEnabled,
+		})
+	})
+
+	mux.HandleFunc("PUT /api/settings/weather", func(w http.ResponseWriter, r *http.Request) {
+		var ws integrations.WeatherSettings
+		if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 4096)).Decode(&ws); err != nil {
+			writeErr(w, 400, "bad weather settings")
+			return
+		}
+		if ws.Latitude < -90 || ws.Latitude > 90 || ws.Longitude < -180 || ws.Longitude > 180 || strings.TrimSpace(ws.Name) == "" {
+			writeErr(w, 400, "need a place name and valid coordinates")
+			return
+		}
+		if ws.Units != "fahrenheit" {
+			ws.Units = "celsius"
+		}
+		if err := h.Store.SetSetting(r.Context(), "weather", ws); err != nil {
+			writeErr(w, 500, "could not save")
+			return
+		}
+		h.refresh("weather")
+		writeJSON(w, 200, ws)
+	})
+
+	mux.HandleFunc("DELETE /api/settings/weather", func(w http.ResponseWriter, r *http.Request) {
+		if err := h.Store.DeleteSetting(r.Context(), "weather"); err != nil {
+			writeErr(w, 500, "could not remove")
+			return
+		}
+		h.refresh("weather")
+		writeJSON(w, 200, map[string]string{"status": "ok"})
+	})
+
+	mux.HandleFunc("PUT /api/settings/category-order", func(w http.ResponseWriter, r *http.Request) {
+		var order []string
+		if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 16384)).Decode(&order); err != nil {
+			writeErr(w, 400, "expected a list of category names")
+			return
+		}
+		if err := h.Store.SetSetting(r.Context(), "categoryOrder", order); err != nil {
+			writeErr(w, 500, "could not save")
+			return
+		}
+		writeJSON(w, 200, order)
+	})
+
+	// Place search for the weather location; Hub calls out so the browser
+	// never talks to outside services directly.
+	mux.HandleFunc("GET /api/geocode", func(w http.ResponseWriter, r *http.Request) {
+		q := strings.TrimSpace(r.URL.Query().Get("q"))
+		if len(q) < 2 {
+			writeJSON(w, 200, []integrations.Place{})
+			return
+		}
+		places, err := integrations.Geocode(r.Context(), nil, h.GeocodeURL, q)
+		if err != nil {
+			writeErr(w, 502, "place search is unavailable right now")
+			return
+		}
+		writeJSON(w, 200, places)
 	})
 
 	mux.HandleFunc("POST /api/registry/rescan", func(w http.ResponseWriter, r *http.Request) {
@@ -191,6 +323,63 @@ func (h *Handler) Routes(mux *http.ServeMux) {
 		}
 		writeJSON(w, 200, errs)
 	})
+}
+
+func (h *Handler) weatherSettings(ctx context.Context) (integrations.WeatherSettings, bool, error) {
+	if h.Weather == nil {
+		return integrations.WeatherSettings{}, false, nil
+	}
+	return h.Weather.Settings(ctx)
+}
+
+func (h *Handler) refresh(name string) {
+	if h.Status != nil {
+		h.Status.Refresh(name)
+	}
+}
+
+type statusEntry struct {
+	Configured bool `json:"configured"`
+	integrations.Entry
+}
+
+func (h *Handler) entry(name string, configured bool) statusEntry {
+	if h.Status == nil || !configured {
+		return statusEntry{Configured: configured}
+	}
+	return statusEntry{Configured: true, Entry: h.Status.Get(name)}
+}
+
+type downApp struct {
+	ID    string `json:"id"`
+	Name  string `json:"name"`
+	Error string `json:"error,omitempty"`
+}
+
+// healthSummary: installed apps, and which service apps failed their check.
+func (h *Handler) healthSummary(ctx context.Context) map[string]any {
+	total := 0
+	down := []downApp{}
+	for _, a := range h.withState(ctx, h.Registry.Apps()) {
+		if !a.Installed {
+			continue
+		}
+		total++
+		if a.HealthOK != nil && !*a.HealthOK {
+			down = append(down, downApp{ID: a.ID, Name: a.Name, Error: a.HealthError})
+		}
+	}
+	return map[string]any{"total": total, "running": total - len(down), "down": down}
+}
+
+func (h *Handler) categoryOrder(ctx context.Context) map[string]int {
+	var order []string
+	_, _ = h.Store.GetSetting(ctx, "categoryOrder", &order)
+	m := map[string]int{}
+	for i, name := range order {
+		m[name] = i
+	}
+	return m
 }
 
 func (h *Handler) requireApp(w http.ResponseWriter, r *http.Request) error {

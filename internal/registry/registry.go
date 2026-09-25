@@ -11,6 +11,7 @@ import (
 	"regexp"
 	"strings"
 	"sync"
+	"time"
 	"unicode/utf8"
 )
 
@@ -29,6 +30,10 @@ type App struct {
 	Installed   bool     `json:"installed"`
 	Pinned      bool     `json:"pinned"`
 	HealthOK    *bool    `json:"healthOk,omitempty"`
+	HealthError string   `json:"healthError,omitempty"`
+	// Latest health check, service apps only.
+	HealthLatencyMS *int64     `json:"healthLatencyMs,omitempty"`
+	HealthCheckedAt *time.Time `json:"healthCheckedAt,omitempty"`
 }
 
 // manifest mirrors hub.json. Unknown fields are ignored by encoding/json,
@@ -104,7 +109,7 @@ func loadOne(appsDir, dir string) (App, string) {
 	}
 	var m manifest
 	if err := json.Unmarshal(raw, &m); err != nil {
-		return none, "hub.json is not valid JSON: "+err.Error()
+		return none, "hub.json is not valid JSON: " + err.Error()
 	}
 	if m.ManifestVersion != 1 {
 		return none, "manifestVersion must be 1"
