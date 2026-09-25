@@ -270,7 +270,7 @@ function MemoryRow({ app }: { app?: TileApp }) {
   const progress = useMemoryProgress();
   const best = useMemoryBest();
   const glyph = useRef<HTMLSpanElement>(null);
-  const open = () => launch('memory', glyph.current?.querySelector('.app-glyph'));
+  const open = () => launch('memory', glyph.current?.querySelector('.app-glyph'), progress ? '#continue' : '');
   return (
     <div className="today-row">
       <span ref={glyph}><RowIcon app={app} kind="memory" /></span>
