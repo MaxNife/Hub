@@ -16,20 +16,29 @@ export function AppGlyph({ app, size = 76 }: { app: TileApp; size?: number }) {
   );
 }
 
-export function AppTile({ app, sub, index = 0, actions, disabled }: {
-  app: TileApp; sub?: ReactNode; index?: number; actions?: ReactNode; disabled?: boolean;
+export type TileBadge = 'running' | 'update';
+
+// Icon-first app tile: glyph, name, one line of detail, optional actions.
+export function AppTile({ app, sub, index = 0, actions, disabled, badge }: {
+  app: TileApp; sub?: ReactNode; index?: number; actions?: ReactNode; disabled?: boolean; badge?: TileBadge;
 }) {
   const { launch } = useShell();
   const glyph = useRef<HTMLSpanElement>(null);
   const body = (
     <>
-      <span ref={glyph} className="glyph-slot"><AppGlyph app={app} /></span>
-      <span className="name">{app.name}</span>
-      {sub !== undefined && <span className={`sub${app.offline ? ' off' : ''}`}>{app.offline ? 'Offline' : sub}</span>}
+      <span ref={glyph} className="tile-icon">
+        <AppGlyph app={app} size={96} />
+        {badge === 'running' && <span className="badge-dot" title="In progress"><span className="sr-only">In progress</span></span>}
+        {badge === 'update' && <span className="badge-pill">Update</span>}
+      </span>
+      <span className="tile-text">
+        <span className="tile-name">{app.name}</span>
+        {sub !== undefined && <span className={`tile-sub${app.offline ? ' off' : ''}`}>{app.offline ? 'Offline' : sub}</span>}
+      </span>
     </>
   );
   return (
-    <div className={`rcard${disabled ? ' muted' : ''}`} style={stagger(index)}>
+    <div className={`app-tile${disabled ? ' muted' : ''}`} style={stagger(index)}>
       {disabled ? (
         <div className="tile">{body}</div>
       ) : (
@@ -40,6 +49,10 @@ export function AppTile({ app, sub, index = 0, actions, disabled }: {
       {actions && <div className="card-actions">{actions}</div>}
     </div>
   );
+}
+
+export function TileGrid({ children, label }: { children: ReactNode; label?: string }) {
+  return <div className="tile-grid" aria-label={label}>{children}</div>;
 }
 
 export function PageHeader({ title, eyebrow, children }: { title: string; eyebrow?: ReactNode; children?: ReactNode }) {
@@ -67,11 +80,11 @@ export function EmptyState({ icon, title, body, action }: {
   );
 }
 
-export function SkeletonGrid({ count = 6 }: { count?: number }) {
+export function SkeletonGrid({ count = 4 }: { count?: number }) {
   return (
-    <div className="recent-grid" aria-busy="true" aria-label="Loading apps">
+    <div className="tile-grid" aria-busy="true" aria-label="Loading apps">
       {Array.from({ length: count }, (_, i) => (
-        <div key={i} className="rcard skeleton" style={stagger(i)}>
+        <div key={i} className="app-tile skeleton" style={stagger(i)}>
           <span className="sk sk-icon" />
           <span className="sk sk-line" />
           <span className="sk sk-line short" />

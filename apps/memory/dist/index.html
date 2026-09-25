@@ -27,6 +27,7 @@
   .win h2 { margin: 0; font-family: 'Bricolage Grotesque', system-ui, sans-serif; font-size: 28px; }
   .win p { margin: 0 0 8px; color: #c9c5d6; }
   button.primary { border: none; border-radius: 999px; padding: 12px 28px; font: inherit; font-weight: 600; font-size: 15px; background: #8b6cff; color: #fff; cursor: pointer; }
+  .card.done.restored { animation: none; }
   .card.done { animation: matched 0.45s cubic-bezier(0.34, 1.56, 0.64, 1); }
   @keyframes matched { 40% { transform: scale(1.1); } }
   .win:not([hidden]) { animation: win-fade 0.3s ease both; }
@@ -70,6 +71,8 @@
   'use strict';
   var FACES = ['🚀', '🌙', '⚡', '🌊', '🔥', '🍀', '🎧', '🍎'];
   var BEST_KEY = 'memory:best';
+  // In-progress game, so Hub can show "6 of 8 pairs" and Resume restores it.
+  var PROGRESS_KEY = 'memory:progress';
   var grid = document.getElementById('grid');
   var movesEl = document.getElementById('moves');
   var timeEl = document.getElementById('time');
@@ -100,8 +103,27 @@
     }
     return a;
   }
-  function deal() {
-    deck = shuffle(FACES.concat(FACES));
+  function save() {
+    var done = [];
+    grid.querySelectorAll('.card.done').forEach(function (c) { done.push(Number(c.dataset.i)); });
+    try {
+      localStorage.setItem(PROGRESS_KEY, JSON.stringify({
+        deck: deck, done: done, moves: moves, secs: secs, pairs: done.length / 2, total: deck.length / 2
+      }));
+    } catch (e) {}
+  }
+  function clearProgress() {
+    try { localStorage.removeItem(PROGRESS_KEY); } catch (e) {}
+  }
+  function saved() {
+    try {
+      var p = JSON.parse(localStorage.getItem(PROGRESS_KEY) || 'null');
+      if (p && Array.isArray(p.deck) && p.deck.length === FACES.length * 2 && Array.isArray(p.done)) return p;
+    } catch (e) {}
+    return null;
+  }
+  function build(faces) {
+    deck = faces;
     grid.innerHTML = '';
     deck.forEach(function (face, i) {
       var b = document.createElement('button');
@@ -120,6 +142,26 @@
     winBox.hidden = true;
     paintBest();
   }
+  function deal() {
+    clearProgress();
+    build(shuffle(FACES.concat(FACES)));
+  }
+  // Pick up where the last session left off; the clock resumes on the next flip.
+  function resume(p) {
+    build(p.deck);
+    p.done.forEach(function (i) {
+      var c = grid.children[i];
+      if (!c) return;
+      c.classList.add('open', 'done', 'restored');
+      c.textContent = c.dataset.face;
+      c.disabled = true;
+    });
+    matched = p.done.length;
+    moves = p.moves || 0;
+    secs = p.secs || 0;
+    movesEl.textContent = String(moves);
+    timeEl.textContent = fmt(secs);
+  }
   function flip(card) {
     if (lock || card.classList.contains('open') || card.classList.contains('done')) return;
     if (!started) { started = true; timer = setInterval(tick, 1000); }
@@ -136,7 +178,9 @@
       first = null;
       matched += 2;
       if (matched === deck.length) finish();
+      else save();
     } else {
+      save();
       lock = true;
       var a = first, b = card;
       first = null;
@@ -149,6 +193,7 @@
   }
   function finish() {
     if (timer) { clearInterval(timer); timer = null; }
+    clearProgress();
     var b = best();
     var isBest = b === null || secs < b;
     if (isBest) {
@@ -180,7 +225,9 @@
   }
   document.getElementById('restart').addEventListener('click', deal);
   document.getElementById('again').addEventListener('click', deal);
-  deal();
+  var p = saved();
+  if (p && p.done.length > 0 && p.done.length < p.deck.length) resume(p);
+  else deal();
 })();
 </script>
 </body>

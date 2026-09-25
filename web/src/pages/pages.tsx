@@ -7,8 +7,9 @@ import { useTheme, type ThemePref } from '../theme';
 import { AppGlyph, AppTile, DemoBanner, EmptyState, PageHeader, SkeletonGrid } from '../components/ui';
 import {
   IconAlert, IconArrowLeft, IconCheck, IconClock, IconEyeOff, IconGrid, IconHome, IconMenu, IconMonitor,
-  IconMoon, IconPlus, IconPopOut, IconRefresh, IconSearch, IconStar, IconStarFilled, IconSun,
+  IconMoon, IconPlus, IconPopOut, IconRefresh, IconSearch, IconStar, IconStarFilled, IconSun, IconChevronRight, IconCloud,
 } from '../components/Icons';
+import { AppIcon } from '../components/AppIcon';
 import {
   get, markOpened, useApps, useLiveApps, useRegistryErrors, type LiveApp, type RecentEntry, type TileApp,
 } from '../live';
@@ -60,9 +61,10 @@ function PinButton({ app, onClick }: { app: TileApp; onClick: () => void }) {
       className={`chip-btn pin${app.pinned ? ' on' : ''}`}
       onClick={onClick}
       aria-pressed={app.pinned}
+      aria-label={app.pinned ? `Unpin ${app.name}` : `Pin ${app.name}`}
     >
       {app.pinned ? <IconStarFilled size={14} /> : <IconStar size={14} />}
-      {app.pinned ? 'Pinned' : 'Pin'}
+      <span className="chip-label">{app.pinned ? 'Pinned' : 'Pin'}</span>
     </button>
   );
 }
@@ -84,7 +86,7 @@ export function Category() {
       {status === 'loading' ? (
         <SkeletonGrid count={4} />
       ) : inCat.length > 0 ? (
-        <div className="recent-grid">
+        <div className="tile-grid">
           {inCat.map((a, i) => <AppTile key={a.id} app={a} index={i} sub={a.description} />)}
         </div>
       ) : (
@@ -133,7 +135,7 @@ export function AllApps() {
       ) : (
         <>
           {installed.length > 0 ? (
-            <div className="recent-grid">
+            <div className="tile-grid">
               {installed.map((a, i) => (
                 <AppTile
                   key={a.id}
@@ -143,8 +145,8 @@ export function AllApps() {
                   actions={
                     <>
                       <PinButton app={a} onClick={guard(status, () => setPinned(a, !a.pinned))} />
-                      <button type="button" className="chip-btn" onClick={guard(status, () => setInstalled(a, false))} title={`Hide ${a.name}`}>
-                        <IconEyeOff size={14} />Hide
+                      <button type="button" className="chip-btn" onClick={guard(status, () => setInstalled(a, false))} aria-label={`Hide ${a.name}`}>
+                        <IconEyeOff size={14} /><span className="chip-label">Hide</span>
                       </button>
                     </>
                   }
@@ -161,7 +163,7 @@ export function AllApps() {
           {notInstalled.length > 0 && (
             <section className="section">
               <h2 className="section-title">Not installed</h2>
-              <div className="recent-grid">
+              <div className="tile-grid">
                 {notInstalled.map((a, i) => (
                   <AppTile
                     key={a.id}
@@ -204,7 +206,7 @@ export function Favorites() {
           action={<Link to="/apps" className="btn btn-primary">Pick favorites</Link>}
         />
       ) : (
-        <div className="recent-grid">
+        <div className="tile-grid">
           {pinned.map((a, i) => (
             <AppTile
               key={a.id}
@@ -237,14 +239,14 @@ export function RecentPage() {
       {isPending ? (
         <SkeletonGrid />
       ) : data && data.length > 0 ? (
-        <div className="recent-grid">
+        <div className="tile-grid">
           {data.map((r, i) => {
             const app = apps.find((a) => a.id === r.id);
             return app ? <AppTile key={r.id} app={app} index={i} sub={fmt(r.openedAt)} /> : null;
           })}
         </div>
       ) : status === 'demo' && demo.length > 0 ? (
-        <div className="recent-grid">
+        <div className="tile-grid">
           {demo.map((a, i) => <AppTile key={a.id} app={a} index={i} sub={a.demoLastOpened} />)}
         </div>
       ) : (
@@ -409,78 +411,88 @@ export function Settings() {
   };
 
   return (
-    <>
-      <PageHeader title="Settings" eyebrow="Make Hub yours" />
-      <div className="settings-grid">
-        <section className="panel">
-          <h2 className="panel-title">Appearance</h2>
-          <p className="panel-body">Follow your system, or pin Hub to light or dark.</p>
-          <div className="segmented" role="radiogroup" aria-label="Theme">
-            {THEMES.map((t) => (
-              <button
-                key={t.value}
-                type="button"
-                role="radio"
-                aria-checked={pref === t.value}
-                className={pref === t.value ? 'on' : ''}
-                onClick={() => set(t.value)}
-              >
-                {t.icon}{t.label}
-              </button>
-            ))}
-          </div>
-        </section>
+    <div className="form-page">
+      <div className="form-title"><h1>Settings</h1></div>
+      <p className="form-lead">Make Hub yours. Changes save as you make them.</p>
 
-        <section className="panel">
-          <h2 className="panel-title">Apps folder</h2>
-          <p className="panel-body">
+      <section className="form-section" aria-labelledby="look-h">
+        <h2 id="look-h">Appearance</h2>
+        <p className="form-help">Follow your system, or pin Hub to light or dark.</p>
+        <div className="seg" role="radiogroup" aria-label="Theme">
+          {THEMES.map((t) => (
+            <button
+              key={t.value}
+              type="button"
+              role="radio"
+              aria-checked={pref === t.value}
+              className={pref === t.value ? 'on' : ''}
+              onClick={() => set(t.value)}
+            >
+              {t.icon}{t.label}
+            </button>
+          ))}
+        </div>
+      </section>
+
+      <section className="form-section" aria-labelledby="widgets-h">
+        <h2 id="widgets-h">Widgets</h2>
+        <p className="form-help">What the rows on Home show.</p>
+        <div className="link-list">
+          <Link to="/settings/football" className="link-row">
+            <span className="app-glyph"><AppIcon kind="football" size={32} /></span>
+            <span className="grow"><b>Football</b><small>Leagues, clubs and what shows when nothing is live</small></span>
+            <IconChevronRight size={16} />
+          </Link>
+          <div className="link-row static">
+            <span className="link-icon"><IconCloud size={18} /></span>
+            <span className="grow"><b>Weather and calendar</b><small>Arrive with the status strip</small></span>
+            <span className="soon">Coming soon</span>
+          </div>
+        </div>
+      </section>
+
+      <section className="form-section split" aria-labelledby="folder-h">
+        <div>
+          <h2 id="folder-h">Apps folder</h2>
+          <p className="form-help">
             Drop a folder with <code>hub.json</code> into <code>apps/</code>, then rescan.
           </p>
-          <button type="button" className="btn btn-primary" onClick={rescan} disabled={scan === 'busy'}>
-            {scan === 'done' ? <IconCheck size={16} /> : <IconRefresh size={16} className={scan === 'busy' ? 'spin' : ''} />}
-            {scan === 'busy' ? 'Scanning…' : scan === 'done' ? 'Up to date' : 'Rescan apps/'}
-          </button>
-        </section>
+        </div>
+        <button type="button" className="ink-btn" onClick={rescan} disabled={scan === 'busy'}>
+          {scan === 'done' ? <IconCheck size={16} /> : <IconRefresh size={16} className={scan === 'busy' ? 'spin' : ''} />}
+          {scan === 'busy' ? 'Scanning…' : scan === 'done' ? 'Up to date' : 'Rescan apps/'}
+        </button>
+      </section>
 
-        <section className="panel wide">
-          <h2 className="panel-title">Manifest errors</h2>
-          {isPending ? (
-            <p className="panel-body">Checking…</p>
-          ) : !errors ? (
-            <p className="panel-body">Start the Hub server to validate manifests.</p>
-          ) : errors.length === 0 ? (
-            <p className="panel-body ok-text"><IconCheck size={16} /> Every manifest is valid.</p>
-          ) : (
-            <ul className="error-list">
-              {errors.map((e) => (
-                <li key={e.id}>
-                  <IconAlert size={18} />
-                  <div><b>{e.id}</b><span>{e.reason}</span></div>
-                </li>
-              ))}
-            </ul>
-          )}
-        </section>
-
-        <section className="panel">
-          <h2 className="panel-title">Integrations</h2>
-          <p className="panel-body">Weather and calendar feed the status strip on Home.</p>
-          <ul className="integration-list">
-            <li><span>Weather</span><span className="soon">Coming soon</span></li>
-            <li><span>Calendar (ICS)</span><span className="soon">Coming soon</span></li>
+      <section className="form-section" aria-labelledby="errors-h">
+        <h2 id="errors-h">Manifest errors</h2>
+        {isPending ? (
+          <p className="form-help">Checking…</p>
+        ) : !errors ? (
+          <p className="form-help">Start the Hub server to validate manifests.</p>
+        ) : errors.length === 0 ? (
+          <p className="form-help ok-text"><IconCheck size={16} /> Every manifest is valid.</p>
+        ) : (
+          <ul className="error-list">
+            {errors.map((e) => (
+              <li key={e.id}>
+                <IconAlert size={18} />
+                <div><b>{e.id}</b><span>{e.reason}</span></div>
+              </li>
+            ))}
           </ul>
-        </section>
+        )}
+      </section>
 
-        <section className="panel">
-          <h2 className="panel-title">Keyboard</h2>
-          <ul className="shortcut-list">
-            <li><span>Search apps and actions</span><span><kbd>Ctrl</kbd><kbd>K</kbd></span></li>
-            <li><span>Quick search</span><span><kbd>/</kbd></span></li>
-            <li><span>Move through results</span><span><kbd>↑</kbd><kbd>↓</kbd></span></li>
-            <li><span>Close menu or palette</span><span><kbd>Esc</kbd></span></li>
-          </ul>
-        </section>
-      </div>
-    </>
+      <section className="form-section" aria-labelledby="keys-h">
+        <h2 id="keys-h">Keyboard</h2>
+        <ul className="shortcut-list">
+          <li><span>Search from anywhere</span><span><kbd>Ctrl</kbd><kbd>K</kbd></span></li>
+          <li><span>Search on Home</span><span><kbd>/</kbd></span></li>
+          <li><span>Move through results</span><span><kbd>↑</kbd><kbd>↓</kbd></span></li>
+          <li><span>Close menu or search</span><span><kbd>Esc</kbd></span></li>
+        </ul>
+      </section>
+    </div>
   );
 }

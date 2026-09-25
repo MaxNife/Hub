@@ -1,13 +1,14 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { flushSync } from 'react-dom';
-import { BrowserRouter, Route, Routes, useLocation, useNavigate } from 'react-router-dom';
+import { BrowserRouter, Link, Route, Routes, useLocation, useNavigate } from 'react-router-dom';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { ShellProvider, reducedMotion, type ToastAction } from './shell-context';
 import { Sidebar } from './components/Sidebar';
 import { CommandPalette } from './components/CommandPalette';
-import { BrandMark, IconMenu, IconSearch } from './components/Icons';
+import { BrandMark, IconMenu } from './components/Icons';
 import { Home } from './pages/Home';
 import { AllApps, Category, Favorites, OpenApp, RecentPage, Settings } from './pages/pages';
+import { FootballSettings } from './pages/FootballSettings';
 
 const qc = new QueryClient();
 
@@ -33,8 +34,11 @@ function Shell() {
         e.preventDefault();
         setPalette((v) => !v);
       } else if (e.key === '/' && !typing) {
+        // Home has its own search box; elsewhere "/" opens the palette.
         e.preventDefault();
-        setPalette(true);
+        const box = document.getElementById('hub-search');
+        if (box) box.focus();
+        else setPalette(true);
       } else if (e.key === 'Escape') {
         setMenu(false);
       }
@@ -77,18 +81,15 @@ function Shell() {
   return (
     <ShellProvider value={shell}>
       <div className="shell">
-        <Sidebar open={menu} onSearch={() => setPalette(true)} drawer={isApp} />
+        <Sidebar open={menu} drawer={isApp} />
         <div className={`drawer-scrim${menu ? ' show' : ''}${isApp ? ' always' : ''}`} onClick={() => setMenu(false)} />
         <main className={`main${isApp ? ' appmode' : ''}`}>
           {!isApp && (
-            <>
-              <svg className="deco" viewBox="0 0 600 600" width="700" height="700" fill="none" strokeWidth="1.6" style={{ right: -230, top: -300 }} aria-hidden="true"><ellipse cx="300" cy="300" rx="150" ry="116" /><ellipse cx="300" cy="300" rx="242" ry="198" /><ellipse cx="300" cy="300" rx="288" ry="240" /></svg>
-              <header className="topbar">
-                <button type="button" className="icon-btn" onClick={() => setMenu(true)} aria-label="Open menu"><IconMenu /></button>
-                <span className="topbar-brand"><BrandMark size={24} /><span>Hub</span></span>
-                <button type="button" className="icon-btn" onClick={() => setPalette(true)} aria-label="Search apps"><IconSearch /></button>
-              </header>
-            </>
+            <header className="topbar">
+              <button type="button" className="icon-btn" onClick={() => setMenu(true)} aria-label="Open menu"><IconMenu size={20} /></button>
+              <Link to="/" className="topbar-brand" aria-label="Hub home"><BrandMark size={20} /><span>Hub</span></Link>
+              <Link to="/settings" className="icon-btn" aria-label="Profile, Hope"><span className="avatar sm" aria-hidden="true">H</span></Link>
+            </header>
           )}
           <div key={isApp ? 'app' : loc.pathname} className={isApp ? 'appwrap-outer' : 'page'}>
             <Routes>
@@ -97,6 +98,7 @@ function Shell() {
               <Route path="/apps" element={<AllApps />} />
               <Route path="/open/:id" element={<OpenApp />} />
               <Route path="/settings" element={<Settings />} />
+              <Route path="/settings/football" element={<FootballSettings />} />
               <Route path="/favorites" element={<Favorites />} />
               <Route path="/recent" element={<RecentPage />} />
             </Routes>

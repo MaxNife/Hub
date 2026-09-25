@@ -98,6 +98,7 @@ export interface TileApp {
   installed: boolean;
   pinned: boolean;
   offline: boolean;
+  running: boolean; // service app answering its health check
   iconSrc?: string;
   iconKind?: AppIconKind;
   demoLastOpened?: string;
@@ -115,6 +116,7 @@ function fromLive(a: LiveApp): TileApp {
     installed: a.installed,
     pinned: a.pinned,
     offline: a.type === 'service' && a.healthOk === false,
+    running: a.type === 'service' && a.healthOk === true,
     iconSrc: iconSrc(a),
   };
 }
@@ -128,6 +130,7 @@ const DEMO: TileApp[] = APPS.map((a) => ({
   installed: a.id !== 'names',
   pinned: a.id === 'memory' || a.id === 'converter',
   offline: !!a.offline,
+  running: false,
   iconKind: a.icon,
   demoLastOpened: a.lastOpened,
 }));
