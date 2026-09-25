@@ -78,8 +78,9 @@ class FootballTest(unittest.TestCase):
 
     @classmethod
     def tearDownClass(cls):
-        cls.espn.shutdown()
-        cls.app.shutdown()
+        for srv in (cls.espn, cls.app):
+            srv.shutdown()
+            srv.server_close()
 
     def setUp(self):
         fs.cache = fs.Cache()
@@ -114,13 +115,16 @@ class FootballTest(unittest.TestCase):
         self.assertEqual(len(f["matches"]), 1)
 
     def test_http_endpoints(self):
-        get = lambda p: json.load(urllib.request.urlopen(self.base + p))
+        def get(p):
+            with urllib.request.urlopen(self.base + p) as r:
+                return json.load(r)
         self.assertEqual(get("/health"), {"status": "ok"})
         feed = get("/api/feed?leagues=pl,ucl&clubs=Arsenal&idle=auto&window=2&count=3")
         self.assertIn(feed["mode"], ("results", "fixtures", "live"))
         table = get("/api/table?league=pl")
         self.assertEqual(table["rows"][0]["points"], 16)
-        page = urllib.request.urlopen(self.base + "/").read().decode()
+        with urllib.request.urlopen(self.base + "/") as r:
+            page = r.read().decode()
         self.assertIn("<title>Football</title>", page)
 
     def test_upstream_down_is_a_502(self):
@@ -129,6 +133,7 @@ class FootballTest(unittest.TestCase):
             with self.assertRaises(urllib.error.HTTPError) as cm:
                 urllib.request.urlopen(self.base + "/api/feed?leagues=pl")
             self.assertEqual(cm.exception.code, 502)
+            cm.exception.close()
         finally:
             fs.ESPN = saved
 

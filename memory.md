@@ -1,37 +1,38 @@
 # Hub — build progress (memory)
 
-Date: 24 Sep 2026. Stack: Go backend + React+TS frontend + SQLite. Status: M0–M3 done, verified end to end. Server runs on `http://127.0.0.1:8080`.
+Updated 25 Sep 2026. Stack: Go backend + React/TS frontend + SQLite, Python service apps. Status: **M0–M7 built**, plus the four extra static apps. Server on `http://127.0.0.1:8080`.
 
-## Done
+## Built
 
-- **M0 skeleton**: Go binary (`cmd/hub/main.go`), config (`internal/config`, env vars per System Design), SQLite + migrations (`internal/store`, `001_init.sql`, WAL), `/healthz`, React build embedded via root `frontend.go` (`//go:embed web/dist` — embed lives at module root because `go:embed` forbids `..`), SPA fallback for client routes, request logging.
-- **M1 registry + static apps**: `internal/registry` validates `hub.json` (version 1, id↔folder, name 1–20 chars, category, in-folder icon, static→`entry/index.html`, service→localhost-only `upstream`, unknown fields ignored). Bad manifests → skipped + logged + `GET /api/registry/errors`. `internal/serve` serves `/apps/{id}/*` (installed-only, traversal guard, trailing-slash redirect, SPA fallback, icon served from app root, `hub.json` stays private; service → 501 until M4).
-- **Full JSON API** (`internal/api`): apps list/detail, install/hide, pin/unpin, opened→recent, categories with counts, rescan, status stub. Missing `app_state` row = installed (new apps appear, hide sets 0).
-- **M2 shell** (`web/`): sidebar + categories + All apps (Install/Hide/Pin) + Favorites + Recent pages + Settings (rescan, manifest errors) + Ctrl+K palette over live apps. Mock data fallback when backend down; honest empty states when up.
-- **App-mode launch UX**: opening an app goes full-bleed (no sidebar/padding), splash screen (icon + name + shimmer, min 850ms + iframe onLoad, then fade), slim blurred chrome (menu drawer · home · name · pop-out), sidebar as overlay drawer. Esc-to-home was tried and **removed** (accidental navigation).
-- **M3 apps**: Converter (length/weight/volume/temp + **live currency** via `open.er-api.com`, frankfurter fallback, 24h cache, offline note, ↻ refresh), Memory (8-pair flip game, fits viewport exactly, best in `memory:best`), Meal picker (shuffle pick, editable list, `meal-picker:meals/last`). Home Recently-used orders by real `opened_at` with relative times; widgets read apps' shared localStorage (Memory best, tonight's pick).
-- **Design pass** (branch `claude/frontend-design-aesthetics-6dgl8t`): colour tokens with light/dark/system theme (`web/src/theme.ts`, `hub:theme`), self-hosted fonts (@fontsource), shadows/grain/widget motifs, hover/press/focus states, staggered entrances, icon→splash morph via View Transitions, Raycast-style palette (fuzzy, ↑/↓, recents, actions, `/` shortcut), optimistic pin/hide with Undo toast, skeletons, honest status pills, inline meal reroll, mobile app bar + widget carousel, reduced-motion support, Memory confetti. Shared UI in `web/src/components/ui.tsx`; one app shape (`TileApp`, `useApps()`) for live and demo data.
-- **Mockup pass** (Home desktop/mobile, Football settings): paper/ink tokens, Instrument Sans, light sidebar, 104px greeting with inline search (`/`), Today rows (football carousel, meal reroll, Memory resume), Your apps grid with filters and Add tile, `/settings/football` (localStorage `football:settings`, sample matches in `web/src/football.ts` until the Football app exists). Memory saves `memory:progress` so Resume restores a game. New icon artwork for the three apps.
-- **E2E**: `e2e.cjs`, 13/13 passing (health, shell, SPA fallback, CRUD state, pin, hide-gates-iframe, static/icon/redirect/traversal/privacy 404s, broken-manifest isolation, all 3 apps serving).
+- **Server** (`cmd/hub`): config from `HUB_*` env, SQLite with embedded migrations (WAL), registry scan + validation, static serving, reverse proxy for service apps (`X-Forwarded-Prefix`, Hub's session cookie stripped, styled offline page on 502), SPA fallback, request logging, graceful shutdown, `hub hash-password`.
+- **Operations**: slog JSON to stdout + `data/hub.log` (10 MB × 3, built-in rotator); daily pruning (opens 90 d, health 7 d, expired sessions) and `VACUUM INTO` backups to `data/backups/` (keeps 7).
+- **M4 service apps**: health checker every 30 s (3 s timeout, parallel, results in `health_checks`), `POST /api/apps/{id}/check` for Retry; health dots on tiles, offline screen. **Football** (`apps/football`, Python stdlib, :8101): ESPN public scoreboard/standings, `/api/feed` drives Home's carousel from the Football settings (leagues, clubs first, auto/results/fixtures, window, count); its own page has Live & today / Results / Fixtures / Table.
+- **M5 status line**: provider framework (per-provider timers, 1-minute retry after a failure, values older than 2 intervals become a dash); Open-Meteo weather (location via Settings → Weather and calendar, place search proxied through `/api/geocode`); ICS calendar next event (RRULE daily/weekly/monthly/yearly, EXDATE, moved instances, TZID incl. common Windows names); health summary.
+- **M6 auth**: bcrypt hash in `HUB_PASSWORD_HASH`, 30-day sessions (SHA-256 of token stored), middleware on `/api` + `/apps`, `X-Hub-Request: 1` required on every API write (even without a password), 5 failures → 1-minute lockout, refuses non-loopback `HUB_ADDR` without a hash, optional `HUB_TLS_CERT/KEY`. Login screen in the shell; Sign out in Settings.
+- **M7 Transcribe** (`apps/transcribe`, Python, :8102): raw-body upload, SQLite job table, one worker thread, faster-whisper with progress from segment timestamps, restart re-queues running jobs, jobs wait if the engine isn't installed, `.txt`/`.srt`/`.vtt` downloads.
+- **Frontend**: design from `instructions/mockups/` (paper/ink tokens, Instrument Sans + Bricolage, light sidebar, 104 px greeting, search box, Today rows, Your apps, Football settings, Weather and calendar settings, login). `web/src/api.ts` adds the CSRF header and turns a 401 into the login screen. Memory saves `memory:progress` so Resume restores a game.
+- **Static apps**: Converter, Meal picker, Memory, Reaction, Puzzle, Random, Name generator — all use `appkit/theme-head.html` (Hub tokens, follows `hub:theme`).
+- **Tests**: `go test ./...`; `python -m unittest apps/football/test_server.py apps/transcribe/test_server.py` (fake ESPN, fake speech engine); `node e2e.cjs` 17/17 (adds service proxy/health/offline, CSRF, status/settings, all static apps).
+
+## Not verifiable in the cloud sandbox
+
+ESPN, Open-Meteo and Hugging Face were blocked there, so live football data, real weather/place search and real speech recognition were tested only against local fakes. Check them on the dev machine.
 
 ## How to run
 
-- Backend: `& 'C:\Program Files\Go\bin\go.exe' run ./cmd/hub` (system Go 1.27.0; plain `go` not on PATH in non-interactive shells — re-login may fix). `HUB_ADDR`/`HUB_APPS_DIR`/`HUB_DATA_DIR` envs, defaults `127.0.0.1:8080`/`./apps`/`./data`. Frontend dev: `cd web; npm.cmd run dev` (proxies `/api`+`/apps` → :8080). Build: `.\build.ps1`. Tests: `node e2e.cjs` (needs server on :8080).
-- Go toolchain: user installed system-wide; `.tools/` holds only `GO_LOCATION.md` — **do not re-download a local toolchain**.
+- Backend: `go run ./cmd/hub` (needs `web/dist`: `cd web; npm.cmd run build`). Frontend dev: `cd web; npm.cmd run dev`. Build: `.\build.ps1`. Tests: see README.
+- Service apps: `python apps/football/server.py`, `python apps/transcribe/server.py` (after `pip install -r apps/transcribe/requirements.txt`; first run downloads the Whisper model, `TRANSCRIBE_MODEL` defaults to `small`).
+- Go toolchain: system Go at `C:\Program Files\Go\bin\go.exe`; `.tools/` holds only `GO_LOCATION.md` — **do not re-download a local toolchain**.
 
 ## Environment gotchas
 
-- `cmd/hub/` was never committed: the old `.gitignore` line `hub` also matched that directory (now anchored as `/hub`). Commit `cmd/hub/main.go` from the dev machine.
-
-- Smart App Control (enforced) blocks unsigned `hub.exe` (CodeIntegrity 3077/3118) → dev via `go run`; release binary needs allow-listing (noted in README).
+- `cmd/hub/main.go` is now in git. If an older, untracked copy exists locally, move it aside before pulling (git won't overwrite untracked files).
+- Smart App Control (enforced) blocks unsigned `hub.exe` (CodeIntegrity 3077/3118) → dev via `go run`; release binary needs allow-listing.
 - PowerShell 5.1 non-interactive: no `&&`, no `echo`/`head`; use `;`, `Write-Host`, `Select-Object`. `Invoke-WebRequest` prompts fail → use `curl.exe`. Complex `node -e` quoting breaks → write `.cjs` files instead.
-- No desktop browser connected → verify via `curl.exe` + served-bundle string checks, not screenshots.
 - `go run` binaries are named `hub.exe` — `taskkill /IM hub.exe` kills the dev server too.
+- The password hash contains `$`: quote it with single quotes in PowerShell.
 
-## Next (per System Design build plan)
+## Next
 
-- **M4 service apps**: reverse proxy + 30s health checker + health dots + offline state; Football as first service app.
-- **M5 status strip**: provider framework, Open-Meteo weather, calendar ICS, health summary (strip currently static pills).
-- **M6 auth**: password login, sessions, middleware, HTTPS.
-- **M7 transcribe**: Python service with background jobs.
-- Later: Reaction/Puzzle/Random/Names static apps; widgets/actions/AI hooks (manifest already forward-compatible).
+- Widgets and quick actions from manifests (System Design § Later); per-app key-value API; file watching instead of rescan.
+- Service apps as Windows services (NSSM) or a Compose file.

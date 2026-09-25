@@ -1,4 +1,5 @@
-// End-to-end suite for Hub M0+M1+M2 backend. Run: node e2e.cjs (hub.exe must be up)
+// End-to-end suite for the Hub server. Run: node e2e.cjs (hub must be up on :8080,
+// started from the repo root without HUB_PASSWORD_HASH).
 const assert = require('assert');
 const fs = require('fs');
 const path = require('path');
@@ -149,6 +150,78 @@ await t('m3 apps serve with correct titles', async () => {
   assert.strictEqual((await req('GET', '/apps/memory/icon.svg')).status, 200);
   const cats = (await req('GET', '/api/categories')).json;
   assert.ok(cats.some(c => c.name === 'Games'), 'Games category: ' + JSON.stringify(cats));
+});
+
+await t('all static apps serve', async () => {
+  await req('POST', '/api/registry/rescan');
+  for (const [id, title] of [['reaction', 'Reaction'], ['puzzle', 'Puzzle'], ['random', 'Random'], ['names', 'Name generator']]) {
+    const page = await req('GET', `/apps/${id}/`);
+    assert.strictEqual(page.status, 200, id);
+    assert.ok(page.text.includes(`<title>${title}</title>`), id + ' title');
+    assert.ok(page.text.includes('hub:theme'), id + ' follows the Hub theme');
+  }
+});
+
+await t('writes need the X-Hub-Request header', async () => {
+  const r = await fetch(BASE + '/api/apps/converter/pin', { method: 'POST' });
+  assert.strictEqual(r.status, 403);
+  const ok = await req('DELETE', '/api/apps/converter/pin');
+  assert.strictEqual(ok.status, 200);
+});
+
+await t('session, status and settings', async () => {
+  const s = await req('GET', '/api/session');
+  assert.deepStrictEqual(s.json, { authRequired: false, authenticated: true });
+  const st = (await req('GET', '/api/status')).json;
+  assert.ok(st.weather && st.nextEvent && st.health, JSON.stringify(st));
+  assert.ok(st.health.total >= 7, 'counts installed apps');
+  const set = (await req('GET', '/api/settings')).json;
+  assert.strictEqual(typeof set.calendarConfigured, 'boolean');
+  const bad = await fetch(BASE + '/api/settings/weather', {
+    method: 'PUT', headers: { 'X-Hub-Request': '1', 'Content-Type': 'application/json' },
+    body: JSON.stringify({ name: 'Nowhere', latitude: 123, longitude: 0 }),
+  });
+  assert.strictEqual(bad.status, 400);
+});
+
+await t('service app: proxy, health, offline', async () => {
+  const http = require('http');
+  let seen = null;
+  const up = http.createServer((r, w) => {
+    if (r.url === '/health') { w.end('ok'); return; }
+    seen = { url: r.url, prefix: r.headers['x-forwarded-prefix'], cookie: r.headers.cookie || '' };
+    w.end('hello from ' + r.url);
+  });
+  await new Promise((res) => up.listen(8199, '127.0.0.1', res));
+  const dir = path.join('apps', 'e2e-svc');
+  fs.mkdirSync(dir, { recursive: true });
+  fs.writeFileSync(path.join(dir, 'icon.svg'), '<svg xmlns="http://www.w3.org/2000/svg"/>');
+  fs.writeFileSync(path.join(dir, 'hub.json'), JSON.stringify({
+    manifestVersion: 1, id: 'e2e-svc', name: 'E2E service', category: 'Test', icon: 'icon.svg',
+    type: 'service', upstream: 'http://127.0.0.1:8199',
+  }));
+  try {
+    assert.strictEqual((await req('POST', '/api/registry/rescan')).status, 200);
+    const check = await req('POST', '/api/apps/e2e-svc/check');
+    assert.strictEqual(check.json.ok, true, JSON.stringify(check.json));
+    const r = await fetch(BASE + '/apps/e2e-svc/echo?x=1', { headers: { Cookie: 'hub_session=secret; theirs=1' } });
+    assert.strictEqual(await r.text(), 'hello from /echo?x=1');
+    assert.strictEqual(seen.prefix, '/apps/e2e-svc');
+    assert.ok(!seen.cookie.includes('secret') && seen.cookie.includes('theirs=1'), 'session cookie stripped: ' + seen.cookie);
+    assert.strictEqual((await req('GET', '/apps/e2e-svc/icon.svg')).status, 200, 'icon served by Hub');
+    const apps = (await req('GET', '/api/apps')).json;
+    assert.strictEqual(apps.find((a) => a.id === 'e2e-svc').healthOk, true);
+    await new Promise((res) => up.close(res));
+    const down = await req('POST', '/api/apps/e2e-svc/check');
+    assert.strictEqual(down.json.ok, false);
+    assert.strictEqual((await req('GET', '/apps/e2e-svc/')).status, 502);
+    const st = (await req('GET', '/api/status')).json;
+    assert.ok(st.health.down.some((d) => d.id === 'e2e-svc'), JSON.stringify(st.health));
+  } finally {
+    up.close();
+    fs.rmSync(dir, { recursive: true, force: true });
+    await req('POST', '/api/registry/rescan');
+  }
 });
 
 console.log(`\n${pass} passed`);
