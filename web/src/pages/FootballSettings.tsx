@@ -2,7 +2,8 @@ import { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { AppIcon } from '../components/AppIcon';
 import { IconChevronLeft, IconClock, IconClose, IconPlus, Shield } from '../components/Icons';
-import { LEAGUES, clubFromName, idlePreview, useFootballSettings, type IdleMode } from '../football';
+import { LEAGUES, clubFromName, idlePreview, useFootballFeed, useFootballSettings, type IdleMode } from '../football';
+import { useApps } from '../live';
 
 const IDLE: { id: IdleMode; title: string; body: string }[] = [
   { id: 'auto', title: 'Automatic', body: 'Upcoming fixtures when the next match is close, otherwise the latest results.' },
@@ -14,6 +15,11 @@ const IDLE: { id: IdleMode; title: string; body: string }[] = [
 export function FootballSettings() {
   const [s, save] = useFootballSettings();
   const [draft, setDraft] = useState('');
+  const { apps, status } = useApps();
+  const app = status === 'live' ? apps.find((a) => a.id === 'football' && a.installed) : undefined;
+  const [now] = useState(() => new Date());
+  const source = useFootballFeed(s, app, now);
+  const nextDays = source.kind === 'live' || source.kind === 'sample' ? source.feed.nextMatchInDays : null;
 
   const addClub = () => {
     const name = draft.trim();
@@ -111,7 +117,7 @@ export function FootballSettings() {
         )}
         <div className="preview-note" aria-live="polite">
           <IconClock size={18} />
-          <span>{idlePreview(s)}</span>
+          <span>{idlePreview(s, nextDays)}</span>
         </div>
       </section>
 

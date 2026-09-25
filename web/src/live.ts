@@ -14,13 +14,14 @@ export interface LiveApp {
   installed: boolean;
   pinned: boolean;
   healthOk?: boolean;
+  healthError?: string;
+  healthLatencyMs?: number;
+  healthCheckedAt?: string;
 }
 
-async function get<T>(url: string): Promise<T> {
-  const r = await fetch(url);
-  if (!r.ok) throw new Error(`${r.status} ${url}`);
-  return r.json() as Promise<T>;
-}
+import { api, apiJSON } from './api';
+
+const get = <T,>(url: string) => apiJSON<T>(url);
 
 export { get };
 
@@ -35,7 +36,7 @@ export function markOpened(id: string) {
   const now = Date.now();
   if (lastOpened.id === id && now - lastOpened.at < 1500) return;
   lastOpened = { id, at: now };
-  fetch(`/api/apps/${id}/opened`, { method: 'POST' }).catch(() => {});
+  api(`/api/apps/${id}/opened`, { method: 'POST' }).catch(() => {});
 }
 
 export function useLiveApps() {
@@ -99,6 +100,10 @@ export interface TileApp {
   pinned: boolean;
   offline: boolean;
   running: boolean; // service app answering its health check
+  service: boolean;
+  healthError?: string;
+  healthLatencyMs?: number;
+  healthCheckedAt?: string;
   iconSrc?: string;
   iconKind?: AppIconKind;
   demoLastOpened?: string;
@@ -117,6 +122,10 @@ function fromLive(a: LiveApp): TileApp {
     pinned: a.pinned,
     offline: a.type === 'service' && a.healthOk === false,
     running: a.type === 'service' && a.healthOk === true,
+    service: a.type === 'service',
+    healthError: a.healthError,
+    healthLatencyMs: a.healthLatencyMs,
+    healthCheckedAt: a.healthCheckedAt,
     iconSrc: iconSrc(a),
   };
 }
@@ -131,6 +140,7 @@ const DEMO: TileApp[] = APPS.map((a) => ({
   pinned: a.id === 'memory' || a.id === 'converter',
   offline: !!a.offline,
   running: false,
+  service: a.type === 'service',
   iconKind: a.icon,
   demoLastOpened: a.lastOpened,
 }));
@@ -146,4 +156,13 @@ export function useCategoryList(): { name: string; count: number; color: string 
   const { data } = useLiveCategories();
   if (data) return data.map((c, i) => ({ ...c, color: categoryColor(c.name, i) }));
   return CATEGORIES;
+}
+
+export type TileBadge = 'running' | 'down' | 'update';
+
+// Health dot for a tile: green while a service app answers, red when down.
+export function healthBadge(app: TileApp): TileBadge | undefined {
+  if (app.offline) return 'down';
+  if (app.running) return 'running';
+  return undefined;
 }

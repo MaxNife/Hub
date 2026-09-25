@@ -1,7 +1,7 @@
 import { useRef, type CSSProperties, type ReactNode } from 'react';
 import { stagger } from '../motion';
 import { AppIcon } from './AppIcon';
-import type { TileApp } from '../live';
+import type { TileApp, TileBadge } from '../live';
 import { useShell } from '../shell-context';
 
 // App icon from either source, wrapped so launch can morph it.
@@ -16,7 +16,6 @@ export function AppGlyph({ app, size = 76 }: { app: TileApp; size?: number }) {
   );
 }
 
-export type TileBadge = 'running' | 'update';
 
 // Icon-first app tile: glyph, name, one line of detail, optional actions.
 export function AppTile({ app, sub, index = 0, actions, disabled, badge }: {
@@ -28,7 +27,8 @@ export function AppTile({ app, sub, index = 0, actions, disabled, badge }: {
     <>
       <span ref={glyph} className="tile-icon">
         <AppGlyph app={app} size={96} />
-        {badge === 'running' && <span className="badge-dot" title="In progress"><span className="sr-only">In progress</span></span>}
+        {badge === 'running' && <span className="badge-dot" title={app.service ? 'Running' : 'In progress'}><span className="sr-only">{app.service ? 'Running' : 'In progress'}</span></span>}
+        {badge === 'down' && <span className="badge-dot down" title="Offline"><span className="sr-only">Offline</span></span>}
         {badge === 'update' && <span className="badge-pill">Update</span>}
       </span>
       <span className="tile-text">
