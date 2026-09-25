@@ -1,8 +1,10 @@
 """Document tools: the engine behind the Documents app.
 
-Every tool takes input file paths plus an options dict and writes its
-results into `out` (a directory), returning the output paths. PDF work uses
-PyMuPDF; PDF → Word uses pdf2docx; Office → PDF uses LibreOffice.
+Every tool takes input files plus an options dict and returns output
+files. Files are held in memory (`File`: a name and its bytes) and nothing
+is written to disk, except that LibreOffice can only convert a file on
+disk: Office → PDF uses a private temporary folder that is deleted as soon
+as the conversion finishes. PDF work uses PyMuPDF; PDF → Word uses pdf2docx.
 """
 
 from __future__ import annotations
@@ -16,7 +18,8 @@ import subprocess
 import tempfile
 import threading
 import zipfile
-from pathlib import Path
+from dataclasses import dataclass
+from pathlib import Path, PurePath
 
 import pymupdf
 
@@ -31,6 +34,21 @@ finally:
 
 class ToolError(Exception):
     """A problem the person can fix (wrong password, bad page range, …)."""
+
+
+@dataclass
+class File:
+    """A document in memory."""
+    name: str
+    data: bytes
+
+    @property
+    def suffix(self) -> str:
+        return PurePath(self.name).suffix.lower()
+
+    @property
+    def size(self) -> int:
+        return len(self.data)
 
 
 OFFICE_EXT = {".doc", ".docx", ".odt", ".rtf", ".txt", ".ppt", ".pptx", ".odp", ".xls", ".xlsx", ".ods", ".csv", ".html", ".htm"}
@@ -55,17 +73,17 @@ def engines() -> dict:
 
 # ─── helpers ────────────────────────────────────────────────────────────
 
-def open_pdf(path: Path, password: str | None = None) -> pymupdf.Document:
+def open_pdf(f: File, password: str | None = None) -> pymupdf.Document:
     try:
-        doc = pymupdf.open(path)
+        doc = pymupdf.open(stream=f.data, filetype="pdf")
     except Exception as e:
-        raise ToolError(f"{path.name} isn't a readable PDF") from e
+        raise ToolError(f"{f.name} isn't a readable PDF") from e
     if not doc.is_pdf:
         doc.close()
-        raise ToolError(f"{path.name} isn't a PDF")
+        raise ToolError(f"{f.name} isn't a PDF")
     if doc.needs_pass and not doc.authenticate(password or ""):
         doc.close()
-        raise ToolError(f"{path.name} is password protected. Unlock it first.")
+        raise ToolError(f"{f.name} is password protected. Unlock it first.")
     return doc
 
 
@@ -92,34 +110,40 @@ def parse_pages(spec: str | None, count: int) -> list[int]:
     return out
 
 
-def stem(path: Path) -> str:
-    return re.sub(r"[^\w\- ]+", "", path.stem).strip() or "document"
+def stem(f: File) -> str:
+    return re.sub(r"[^\w\- ]+", "", PurePath(f.name).stem).strip() or "document"
 
 
-def save(doc: pymupdf.Document, path: Path, **kw) -> Path:
-    doc.save(path, garbage=3, deflate=True, **kw)
-    return path
+def save(doc: pymupdf.Document, name: str, **kw) -> File:
+    return File(name, doc.tobytes(garbage=3, deflate=True, **kw))
 
 
-def zip_outputs(paths: list[Path], out: Path, name: str) -> list[Path]:
+def zip_outputs(files: list[File], name: str) -> list[File]:
     """One file stays one file; several go into a zip."""
-    if len(paths) == 1:
-        return paths
-    z = out / f"{name}.zip"
-    with zipfile.ZipFile(z, "w", zipfile.ZIP_DEFLATED) as zf:
-        for p in paths:
-            zf.write(p, p.name)
-    return [z]
+    if len(files) == 1:
+        return files
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
+        for f in files:
+            zf.writestr(f.name, f.data)
+    return [File(f"{name}.zip", buf.getvalue())]
 
 
-def to_pdf_doc(path: Path) -> pymupdf.Document:
+def open_image(f: File) -> pymupdf.Document:
+    try:
+        return pymupdf.open(stream=f.data, filetype=f.suffix.lstrip(".") or "png")
+    except Exception as e:
+        raise ToolError(f"{f.name} isn't a readable image") from e
+
+
+def to_pdf_doc(f: File) -> pymupdf.Document:
     """Open a PDF, or turn an image into a one-page PDF (for merge)."""
-    if path.suffix.lower() in IMAGE_EXT:
-        img = pymupdf.open(path)
+    if f.suffix in IMAGE_EXT:
+        img = open_image(f)
         pdf = pymupdf.open("pdf", img.convert_to_pdf())
         img.close()
         return pdf
-    return open_pdf(path)
+    return open_pdf(f)
 
 
 def color(hex_color: str | None, default=(0, 0, 0)) -> tuple:
@@ -136,17 +160,17 @@ def color(hex_color: str | None, default=(0, 0, 0)) -> tuple:
 
 # ─── organize ───────────────────────────────────────────────────────────
 
-def merge(files: list[Path], opts: dict, out: Path) -> list[Path]:
+def merge(files: list[File], opts: dict) -> list[File]:
     if len(files) < 2:
         raise ToolError("Add at least two files to merge")
     result = pymupdf.open()
     for f in files:
         with to_pdf_doc(f) as doc:
             result.insert_pdf(doc)
-    return [save(result, out / "merged.pdf")]
+    return [save(result, "merged.pdf")]
 
 
-def split(files: list[Path], opts: dict, out: Path) -> list[Path]:
+def split(files: list[File], opts: dict) -> list[File]:
     src = files[0]
     doc = open_pdf(src)
     n = doc.page_count
@@ -168,20 +192,20 @@ def split(files: list[Path], opts: dict, out: Path) -> list[Path]:
         for p in pages:
             part.insert_pdf(doc, from_page=p, to_page=p)
         label = f"{pages[0] + 1}-{pages[-1] + 1}" if len(pages) > 1 else f"{pages[0] + 1}"
-        paths.append(save(part, out / f"{stem(src)} pages {label}.pdf"))
-    return zip_outputs(paths, out, f"{stem(src)} split")
+        paths.append(save(part, f"{stem(src)} pages {label}.pdf"))
+    return zip_outputs(paths, f"{stem(src)} split")
 
 
-def remove_pages(files: list[Path], opts: dict, out: Path) -> list[Path]:
+def remove_pages(files: list[File], opts: dict) -> list[File]:
     doc = open_pdf(files[0])
     drop = set(parse_pages(opts.get("pages"), doc.page_count))
     if len(drop) >= doc.page_count:
         raise ToolError("That would remove every page")
     doc.select([i for i in range(doc.page_count) if i not in drop])
-    return [save(doc, out / f"{stem(files[0])}.pdf")]
+    return [save(doc, f"{stem(files[0])} pages removed.pdf")]
 
 
-def organize(files: list[Path], opts: dict, out: Path) -> list[Path]:
+def organize(files: list[File], opts: dict) -> list[File]:
     """opts.pages: [{"index": 0-based source page, "rotate": 0|90|180|270}] in the new order."""
     doc = open_pdf(files[0])
     pages = opts.get("pages") or []
@@ -196,10 +220,10 @@ def organize(files: list[Path], opts: dict, out: Path) -> list[Path]:
         if extra:
             page = doc[new_i]
             page.set_rotation((page.rotation + extra) % 360)
-    return [save(doc, out / f"{stem(files[0])}.pdf")]
+    return [save(doc, f"{stem(files[0])} organized.pdf")]
 
 
-def rotate(files: list[Path], opts: dict, out: Path) -> list[Path]:
+def rotate(files: list[File], opts: dict) -> list[File]:
     angle = int(opts.get("angle") or 90) % 360
     if angle not in (90, 180, 270):
         raise ToolError("Rotate by 90, 180 or 270 degrees")
@@ -208,8 +232,8 @@ def rotate(files: list[Path], opts: dict, out: Path) -> list[Path]:
         doc = open_pdf(f)
         for i in parse_pages(opts.get("pages"), doc.page_count):
             doc[i].set_rotation((doc[i].rotation + angle) % 360)
-        results.append(save(doc, out / f"{stem(f)}.pdf"))
-    return zip_outputs(results, out, "rotated")
+        results.append(save(doc, f"{stem(f)} rotated.pdf"))
+    return zip_outputs(results, "rotated")
 
 
 # ─── optimize ───────────────────────────────────────────────────────────
@@ -221,7 +245,7 @@ COMPRESSION = {  # (images above this dpi..., are resampled to this dpi, at this
 }
 
 
-def compress(files: list[Path], opts: dict, out: Path) -> list[Path]:
+def compress(files: list[File], opts: dict) -> list[File]:
     threshold, target, quality = COMPRESSION.get(opts.get("level") or "recommended", COMPRESSION["recommended"])
     results = []
     for f in files:
@@ -231,13 +255,10 @@ def compress(files: list[Path], opts: dict, out: Path) -> list[Path]:
             doc.subset_fonts()
         except Exception:
             pass  # fonts we can't subset are kept whole
-        path = out / f"{stem(f)} compressed.pdf"
-        doc.save(path, garbage=4, deflate=True, deflate_images=True, deflate_fonts=True, clean=True, use_objstms=1)
+        data = doc.tobytes(garbage=4, deflate=True, deflate_images=True, deflate_fonts=True, clean=True, use_objstms=1)
         # Never hand back something bigger than what came in.
-        if path.stat().st_size >= f.stat().st_size:
-            shutil.copyfile(f, path)
-        results.append(path)
-    return zip_outputs(results, out, "compressed")
+        results.append(File(f"{stem(f)} compressed.pdf", data if len(data) < f.size else f.data))
+    return zip_outputs(results, "compressed")
 
 
 # ─── convert to PDF ─────────────────────────────────────────────────────
@@ -245,20 +266,16 @@ def compress(files: list[Path], opts: dict, out: Path) -> list[Path]:
 PAGE_SIZES = {"a4": pymupdf.paper_rect("a4"), "letter": pymupdf.paper_rect("letter")}
 
 
-def images_to_pdf(files: list[Path], opts: dict, out: Path) -> list[Path]:
+def images_to_pdf(files: list[File], opts: dict) -> list[File]:
     size = opts.get("size") or "fit"
     margin = {"none": 0, "small": 18, "big": 42}.get(opts.get("margin") or "none", 0)
     landscape = opts.get("orientation") == "landscape"
     doc = pymupdf.open()
     for f in files:
-        if f.suffix.lower() not in IMAGE_EXT:
+        if f.suffix not in IMAGE_EXT:
             raise ToolError(f"{f.name} isn't an image")
-        try:
-            img = pymupdf.open(f)
+        with open_image(f) as img:
             rect = img[0].rect
-            img.close()
-        except Exception as e:
-            raise ToolError(f"{f.name} isn't a readable image") from e
         if size == "fit":
             page = doc.new_page(width=rect.width + 2 * margin, height=rect.height + 2 * margin)
         else:
@@ -266,77 +283,77 @@ def images_to_pdf(files: list[Path], opts: dict, out: Path) -> list[Path]:
             w, h = (paper.height, paper.width) if landscape else (paper.width, paper.height)
             page = doc.new_page(width=w, height=h)
         area = page.rect + (margin, margin, -margin, -margin)
-        page.insert_image(area, filename=str(f), keep_proportion=True)
+        page.insert_image(area, stream=f.data, keep_proportion=True)
     name = stem(files[0]) if len(files) == 1 else "images"
-    return [save(doc, out / f"{name}.pdf")]
+    return [save(doc, f"{name}.pdf")]
 
 
 _office_lock = threading.Lock()  # LibreOffice runs one conversion at a time
 
 
-def office_to_pdf(files: list[Path], opts: dict, out: Path) -> list[Path]:
+def scratch_dir() -> tempfile.TemporaryDirectory:
+    """A private folder for LibreOffice, in RAM where the system has one."""
+    shm = Path("/dev/shm")
+    return tempfile.TemporaryDirectory(prefix="hub-docs-", dir=shm if shm.is_dir() and os.access(shm, os.W_OK) else None)
+
+
+def office_to_pdf(files: list[File], opts: dict) -> list[File]:
     exe = soffice()
     if not exe:
         raise ToolError("Office conversion needs LibreOffice. Install it on the Hub machine (libreoffice.org), then try again.")
     results = []
     for f in files:
-        if f.suffix.lower() not in OFFICE_EXT:
+        if f.suffix not in OFFICE_EXT:
             raise ToolError(f"{f.name}: use Word, PowerPoint, Excel, OpenDocument, RTF, text or HTML files")
-        with _office_lock, tempfile.TemporaryDirectory() as tmp:
+        with _office_lock, scratch_dir() as tmp:  # deleted, with the copy, when the block ends
+            src = Path(tmp) / f"input{f.suffix}"
+            src.write_bytes(f.data)
             profile = Path(tmp) / "profile"
             cmd = [exe, f"-env:UserInstallation={profile.as_uri()}", "--headless", "--norestore",
-                   "--convert-to", "pdf", "--outdir", tmp, str(f)]
+                   "--convert-to", "pdf", "--outdir", tmp, str(src)]
             try:
                 subprocess.run(cmd, capture_output=True, timeout=180, check=False)
             except subprocess.TimeoutExpired as e:
                 raise ToolError(f"{f.name} took too long to convert") from e
-            made = Path(tmp) / (f.stem + ".pdf")
+            made = Path(tmp) / "input.pdf"
             if not made.exists():
                 raise ToolError(f"LibreOffice couldn't open {f.name}. Check the file, and that LibreOffice's "
                                 "Writer, Calc and Impress parts are installed.")
-            target = out / f"{stem(f)}.pdf"
-            shutil.move(str(made), target)
-            results.append(target)
-    return zip_outputs(results, out, "converted")
+            results.append(File(f"{stem(f)}.pdf", made.read_bytes()))
+    return zip_outputs(results, "converted")
 
 
 # ─── convert from PDF ───────────────────────────────────────────────────
 
-def pdf_to_images(files: list[Path], opts: dict, out: Path) -> list[Path]:
+def pdf_to_images(files: list[File], opts: dict) -> list[File]:
     fmt = "jpg" if opts.get("format") == "jpg" else "png"
     dpi = max(50, min(300, int(opts.get("dpi") or 150)))
     doc = open_pdf(files[0])
     paths = []
     for i in parse_pages(opts.get("pages"), doc.page_count):
         pix = doc[i].get_pixmap(dpi=dpi, alpha=False)
-        p = out / f"{stem(files[0])} page {i + 1}.{fmt}"
-        if fmt == "jpg":
-            pix.save(p, jpg_quality=88)
-        else:
-            pix.save(p)
-        paths.append(p)
-    return zip_outputs(paths, out, f"{stem(files[0])} images")
+        data = pix.tobytes("jpg", jpg_quality=88) if fmt == "jpg" else pix.tobytes("png")
+        paths.append(File(f"{stem(files[0])} page {i + 1}.{fmt}", data))
+    return zip_outputs(paths, f"{stem(files[0])} images")
 
 
-def pdf_to_word(files: list[Path], opts: dict, out: Path) -> list[Path]:
+def pdf_to_word(files: list[File], opts: dict) -> list[File]:
     if DocxConverter is None:
         raise ToolError("PDF to Word needs pdf2docx: pip install -r apps/documents/requirements.txt")
     open_pdf(files[0]).close()  # friendly errors for bad or locked files
-    target = out / f"{stem(files[0])}.docx"
-    cv = DocxConverter(str(files[0]))
+    buf = io.BytesIO()
+    cv = DocxConverter(stream=files[0].data)
     try:
-        cv.convert(str(target))
+        cv.convert(buf)
     finally:
         cv.close()
-    return [target]
+    return [File(f"{stem(files[0])}.docx", buf.getvalue())]
 
 
-def pdf_to_text(files: list[Path], opts: dict, out: Path) -> list[Path]:
+def pdf_to_text(files: list[File], opts: dict) -> list[File]:
     doc = open_pdf(files[0])
     parts = [f"--- Page {i + 1} ---\n{doc[i].get_text('text').strip()}\n" for i in range(doc.page_count)]
-    target = out / f"{stem(files[0])}.txt"
-    target.write_text("\n".join(parts), encoding="utf-8")
-    return [target]
+    return [File(f"{stem(files[0])}.txt", "\n".join(parts).encode("utf-8"))]
 
 
 # ─── edit ───────────────────────────────────────────────────────────────
@@ -347,7 +364,7 @@ POSITIONS = {
 }
 
 
-def page_numbers(files: list[Path], opts: dict, out: Path) -> list[Path]:
+def page_numbers(files: list[File], opts: dict) -> list[File]:
     doc = open_pdf(files[0])
     where, align = POSITIONS.get(opts.get("position") or "bottom-center", ("bottom", 1))
     start = int(opts.get("start") or 1)
@@ -364,10 +381,10 @@ def page_numbers(files: list[Path], opts: dict, out: Path) -> list[Path]:
             else pymupdf.Rect(36, 26, r.width - 36, 30 + size * 1.6)
         page.insert_textbox(box * page.derotation_matrix, text, fontsize=size, fontname="helv", align=align,
                             color=color(opts.get("color"), (0.2, 0.2, 0.2)), rotate=page.rotation)
-    return [save(doc, out / f"{stem(files[0])}.pdf")]
+    return [save(doc, f"{stem(files[0])} numbered.pdf")]
 
 
-def watermark(files: list[Path], opts: dict, out: Path) -> list[Path]:
+def watermark(files: list[File], opts: dict) -> list[File]:
     text = (opts.get("text") or "").strip()
     if not text:
         raise ToolError("Type the watermark text")
@@ -385,11 +402,11 @@ def watermark(files: list[Path], opts: dict, out: Path) -> list[Path]:
             start = pymupdf.Point(center.x - width / 2, center.y + size / 3)
             page.insert_text(start, text, fontsize=size, fontname="helv", color=fill, fill_opacity=opacity,
                              stroke_opacity=opacity, morph=(center, pymupdf.Matrix(-angle - page.rotation)))
-        results.append(save(doc, out / f"{stem(f)}.pdf"))
-    return zip_outputs(results, out, "watermarked")
+        results.append(save(doc, f"{stem(f)} watermarked.pdf"))
+    return zip_outputs(results, "watermarked")
 
 
-def edit(files: list[Path], opts: dict, out: Path) -> list[Path]:
+def edit(files: list[File], opts: dict) -> list[File]:
     """Apply editor operations. Coordinates are PDF points on the page as
     seen (rotation applied), origin top-left:
       text   {page, x, y, w, h, text, size, color}
@@ -443,12 +460,12 @@ def edit(files: list[Path], opts: dict, out: Path) -> list[Path]:
             raise ToolError(f"Unknown edit '{kind}'")
     for n in redacted:
         doc[n].apply_redactions()
-    return [save(doc, out / f"{stem(files[0])}.pdf")]
+    return [save(doc, f"{stem(files[0])} edited.pdf")]
 
 
 # ─── security ───────────────────────────────────────────────────────────
 
-def protect(files: list[Path], opts: dict, out: Path) -> list[Path]:
+def protect(files: list[File], opts: dict) -> list[File]:
     pw = opts.get("password") or ""
     if len(pw) < 4:
         raise ToolError("Use a password of at least 4 characters")
@@ -456,22 +473,22 @@ def protect(files: list[Path], opts: dict, out: Path) -> list[Path]:
     for f in files:
         doc = open_pdf(f)
         perm = pymupdf.PDF_PERM_ACCESSIBILITY | pymupdf.PDF_PERM_PRINT | pymupdf.PDF_PERM_COPY
-        results.append(save(doc, out / f"{stem(f)} protected.pdf", encryption=pymupdf.PDF_ENCRYPT_AES_256,
+        results.append(save(doc, f"{stem(f)} protected.pdf", encryption=pymupdf.PDF_ENCRYPT_AES_256,
                             owner_pw=pw, user_pw=pw, permissions=perm))
-    return zip_outputs(results, out, "protected")
+    return zip_outputs(results, "protected")
 
 
-def unlock(files: list[Path], opts: dict, out: Path) -> list[Path]:
+def unlock(files: list[File], opts: dict) -> list[File]:
     results = []
     for f in files:
         try:
-            doc = pymupdf.open(f)
+            doc = pymupdf.open(stream=f.data, filetype="pdf")
         except Exception as e:
             raise ToolError(f"{f.name} isn't a readable PDF") from e
         if doc.needs_pass and not doc.authenticate(opts.get("password") or ""):
             raise ToolError(f"Wrong password for {f.name}")
-        results.append(save(doc, out / f"{stem(f)} unlocked.pdf", encryption=pymupdf.PDF_ENCRYPT_NONE))
-    return zip_outputs(results, out, "unlocked")
+        results.append(save(doc, f"{stem(f)} unlocked.pdf", encryption=pymupdf.PDF_ENCRYPT_NONE))
+    return zip_outputs(results, "unlocked")
 
 
 # ─── registry + previews ────────────────────────────────────────────────
@@ -484,35 +501,10 @@ TOOLS = {
 }
 
 
-def run(tool: str, files: list[Path], opts: dict, out: Path) -> list[Path]:
+def run(tool: str, files: list[File], opts: dict) -> list[File]:
     fn = TOOLS.get(tool)
     if not fn:
         raise ToolError(f"Unknown tool '{tool}'")
     if not files:
         raise ToolError("Add a file first")
-    out.mkdir(parents=True, exist_ok=True)
-    return fn(files, opts or {}, out)
-
-
-def info(path: Path) -> dict:
-    if path.suffix.lower() != ".pdf":
-        return {"pdf": False}
-    try:
-        doc = pymupdf.open(path)
-    except Exception:
-        return {"pdf": False}
-    if doc.needs_pass:
-        return {"pdf": True, "encrypted": True, "pages": None}
-    return {"pdf": True, "encrypted": False, "pages": doc.page_count,
-            "sizes": [[round(p.rect.width, 2), round(p.rect.height, 2)] for p in doc],
-            "title": (doc.metadata or {}).get("title") or ""}
-
-
-def render(path: Path, index: int, width: int) -> bytes:
-    doc = open_pdf(path)
-    if index < 0 or index >= doc.page_count:
-        raise ToolError("No such page")
-    page = doc[index]
-    zoom = max(0.1, min(4.0, width / page.rect.width))
-    pix = page.get_pixmap(matrix=pymupdf.Matrix(zoom, zoom), alpha=False)
-    return pix.tobytes("png")
+    return fn(files, opts or {})

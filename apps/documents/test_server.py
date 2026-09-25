@@ -26,11 +26,20 @@ def pdf_bytes(pages=2):
     return doc.tobytes()
 
 
+def form(tool, files, **options):
+    """Build the multipart request the browser sends."""
+    b = "testboundary42"
+    parts = [f'--{b}\r\nContent-Disposition: form-data; name="request"\r\n\r\n'.encode()
+             + json.dumps({"tool": tool, "options": options}).encode() + b"\r\n"]
+    for name, data in files:
+        parts.append(f'--{b}\r\nContent-Disposition: form-data; name="file"; filename="{name}"\r\n'
+                     f"Content-Type: application/pdf\r\n\r\n".encode() + data + b"\r\n")
+    parts.append(f"--{b}--\r\n".encode())
+    return b"".join(parts), f"multipart/form-data; boundary={b}"
+
+
 class ServerTest(unittest.TestCase):
     def setUp(self):
-        self.tmp = tempfile.TemporaryDirectory()
-        ds.DATA = pathlib.Path(self.tmp.name)
-        ds.store = ds.Store(ds.DATA)
         self.srv = ds.Server(("127.0.0.1", 0), ds.Handler)
         threading.Thread(target=self.srv.serve_forever, daemon=True).start()
         self.base = f"http://127.0.0.1:{self.srv.server_port}"
@@ -38,7 +47,6 @@ class ServerTest(unittest.TestCase):
     def tearDown(self):
         self.srv.shutdown()
         self.srv.server_close()
-        self.tmp.cleanup()
 
     def call(self, method, path, body=None, ctype=None):
         req = urllib.request.Request(self.base + path, data=body, method=method)
@@ -48,53 +56,47 @@ class ServerTest(unittest.TestCase):
             raw = r.read()
             return r.status, r.headers, (json.loads(raw) if r.headers.get_content_type() == "application/json" else raw)
 
-    def upload(self, name, data):
-        return self.call("POST", "/api/files?name=" + urllib.parse.quote(name), data)[2]
+    def run_tool(self, tool, files, **options):
+        body, ctype = form(tool, files, **options)
+        _, headers, raw = self.call("POST", "/api/run", body, ctype)
+        return ds.parse_multipart(raw, headers["Content-Type"])
 
-    def test_upload_info_render_run_download(self):
-        a = self.upload("A.pdf", pdf_bytes(2))
-        b = self.upload("B.pdf", pdf_bytes(1))
-        self.assertEqual((a["pdf"], a["pages"], a["name"]), (True, 2, "A.pdf"))
-        _, headers, png = self.call("GET", f"/api/files/{a['id']}/pages/1.png?w=120")
-        self.assertTrue(png.startswith(b"\x89PNG"))
-        _, _, out = self.call("POST", "/api/run", json.dumps({"tool": "merge", "files": [a["id"], b["id"]]}).encode(), "application/json")
-        merged = out["outputs"][0]
-        self.assertEqual((merged["name"], merged["pages"]), ("merged.pdf", 3))
-        _, headers, raw = self.call("GET", f"/api/files/{merged['id']}")
-        self.assertIn("attachment", headers["Content-Disposition"])
-        self.assertEqual(pymupdf.open("pdf", raw).page_count, 3)
+    def test_run_returns_files_and_keeps_nothing(self):
+        before = set(pathlib.Path(tempfile.gettempdir()).iterdir())
+        [(field, name, data)] = self.run_tool("merge", [("A.pdf", pdf_bytes(2)), ("B.pdf", pdf_bytes(1))])
+        self.assertEqual((field, name), ("file", "merged.pdf"))
+        self.assertEqual(pymupdf.open("pdf", data).page_count, 3)
+        outs = self.run_tool("split", [("Report.pdf", pdf_bytes(3))], mode="every", every=1)
+        self.assertEqual(len(outs), 1)
+        self.assertTrue(outs[0][1].endswith(".zip"))
+        self.assertEqual(set(pathlib.Path(tempfile.gettempdir()).iterdir()) - before, set())
 
     def test_errors_are_friendly(self):
-        a = self.upload("A.pdf", pdf_bytes(1))
+        body, ctype = form("merge", [("A.pdf", pdf_bytes(1))])
         with self.assertRaises(urllib.error.HTTPError) as cm:
-            self.call("POST", "/api/run", json.dumps({"tool": "merge", "files": [a["id"]]}).encode())
+            self.call("POST", "/api/run", body, ctype)
         self.assertEqual(json.loads(cm.exception.read())["error"], "Add at least two files to merge")
         cm.exception.close()
         with self.assertRaises(urllib.error.HTTPError) as cm:
-            self.call("GET", "/api/files/0123456789abcdef")
-        self.assertEqual(cm.exception.code, 404)
+            self.call("POST", "/api/run", b"{}", "application/json")
+        self.assertEqual(cm.exception.code, 400)
         cm.exception.close()
         with self.assertRaises(urllib.error.HTTPError) as cm:
-            self.call("GET", "/api/files/../../etc/passwd")
+            self.call("POST", "/api/files", b"x")
         self.assertEqual(cm.exception.code, 404)
         cm.exception.close()
 
-    def test_upload_limit_and_sweep(self):
+    def test_request_limit(self):
         old = ds.MAX_BYTES
         ds.MAX_BYTES = 10
         try:
+            body, ctype = form("compress", [("big.pdf", b"x" * 20)])
             with self.assertRaises(urllib.error.HTTPError) as cm:
-                self.upload("big.pdf", b"x" * 20)
+                self.call("POST", "/api/run", body, ctype)
             self.assertEqual(cm.exception.code, 413)
             cm.exception.close()
         finally:
             ds.MAX_BYTES = old
-        a = self.upload("A.pdf", pdf_bytes(1))
-        import os, time
-        folder = ds.store.root / a["id"]
-        os.utime(folder, (time.time() - 3 * 3600,) * 2)
-        ds.store.sweep()
-        self.assertFalse(folder.exists())
 
     def test_health_and_page(self):
         _, _, health = self.call("GET", "/health")
@@ -103,6 +105,8 @@ class ServerTest(unittest.TestCase):
         self.assertIn(b"<title>Documents</title>", page)
         _, headers, js = self.call("GET", "/app.js")
         self.assertEqual(headers.get_content_type(), "text/javascript")
+        _, _, fallback = self.call("GET", "/../../etc/passwd")
+        self.assertIn(b"<title>Documents</title>", fallback)
 
 
 if __name__ == "__main__":

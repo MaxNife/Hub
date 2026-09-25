@@ -1,5 +1,10 @@
-// Documents — tool grid, per-tool flows, page organizer and PDF editor.
+// Documents — home, tool pages, page organizer and PDF editor.
 // Plain JS, relative URLs only (works under /apps/documents/ inside Hub).
+//
+// Files stay on this device. They live in the browser (in memory, and in
+// IndexedDB for Recent files); previews are drawn here with pdf.js. When a
+// tool runs, the files go to the Documents server in that one request and
+// come straight back; the server keeps nothing.
 (function () {
   'use strict';
 
@@ -20,6 +25,8 @@
   }
   const size = (n) => n >= 1e6 ? (n / 1e6).toFixed(1) + ' MB' : Math.max(1, Math.round(n / 1e3)) + ' KB';
   const plural = (n, w) => `${n} ${w}${n === 1 ? '' : 's'}`;
+  const uid = () => (crypto.randomUUID ? crypto.randomUUID() : Date.now().toString(36) + Math.random().toString(36).slice(2));
+  const extOf = (name) => (/\.([a-z0-9]+)$/i.exec(name || '') || [])[1]?.toLowerCase() || '';
 
   // ─── icons (24px line icons) ─────────────────────────────────────────
   const P = {
@@ -42,6 +49,7 @@
     back: 'm15 5-7 7 7 7', up: 'm6 15 6-6 6 6', down: 'm6 9 6 6 6-6', x: 'M6 6l12 12M18 6 6 18', turn: 'M20 11a8 8 0 1 0-2.3 5.7M20 4v7h-7',
     select: 'M5 3l14 8-6 2-2 6z', whiteout: 'M4 6h16v12H4z', highlight: 'M9 11l-4 8h5l7-7-4-4zM13 5l4 4 3-3-4-4z',
     draw: 'M4 18c4-9 7 4 10-3s4-7 6-4', search: 'M11 4a7 7 0 1 0 0 14 7 7 0 0 0 0-14zM20 20l-4-4', redact: 'M3 8h18v8H3z', undo: 'M9 14 4 9l5-5M4 9h10a6 6 0 0 1 0 12h-3',
+    download: 'M12 4v11M7 10l5 5 5-5M5 20h14', device: 'M7 3h10v18H7zM11 18h2', dots: 'M5 12h.01M12 12h.01M19 12h.01',
   };
   const icon = (name, fill) => `<svg viewBox="0 0 24 24" fill="${fill ? 'currentColor' : 'none'}" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="${P[name]}"/></svg>`;
 
@@ -49,6 +57,8 @@
   const PDF = '.pdf,application/pdf';
   const OFFICE = '.doc,.docx,.odt,.rtf,.txt,.ppt,.pptx,.odp,.xls,.xlsx,.ods,.csv,.html,.htm';
   const IMAGES = 'image/*,.png,.jpg,.jpeg,.gif,.bmp,.tif,.tiff,.webp';
+  const IMAGE_EXT = ['png', 'jpg', 'jpeg', 'gif', 'bmp', 'tif', 'tiff', 'webp'];
+  const OFFICE_EXT = OFFICE.split(',').map((x) => x.slice(1));
   const pagesOpt = (label, def, hint) => ({ key: 'pages', type: 'text', label, def, hint: hint || 'Like 1-3, 5, 8- · leave as “all” for every page' });
   const TOOLS = [
     { id: 'merge', group: 'Organize', name: 'Merge PDF', blurb: 'Combine PDFs and images into one file, in the order you want.', icon: 'merge', color: '#7c5cff', accept: PDF + ',' + IMAGES, multi: true, min: 2, action: 'Merge' },
@@ -63,10 +73,10 @@
     { id: 'rotate', group: 'Organize', name: 'Rotate PDF', blurb: 'Turn pages the right way up.', icon: 'rotate', color: '#7c5cff', accept: PDF, multi: true, action: 'Rotate',
       opts: [{ key: 'angle', type: 'choice', label: 'Rotate', def: 90, choices: [[90, '90° right'], [180, '180°'], [270, '90° left']] }, pagesOpt('Pages', 'all')] },
     { id: 'compress', group: 'Optimize', name: 'Compress PDF', blurb: 'Make PDFs smaller for email and upload.', icon: 'compress', color: '#2ebe7a', accept: PDF, multi: true, action: 'Compress',
-      opts: [{ key: 'level', type: 'choice', label: 'Compression', def: 'recommended', choices: [['low', 'Light, best quality'], ['recommended', 'Recommended'], ['extreme', 'Smallest file']] }] },
+      opts: [{ key: 'level', type: 'choice', label: 'Compression', def: () => kit.settings.compression, choices: [['low', 'Light, best quality'], ['recommended', 'Recommended'], ['extreme', 'Smallest file']] }] },
     { id: 'office-to-pdf', group: 'Convert to PDF', name: 'Office to PDF', blurb: 'Word, PowerPoint and Excel files to PDF.', icon: 'office', color: '#ff9f3f', accept: OFFICE, multi: true, action: 'Convert to PDF', needs: 'office' },
     { id: 'images-to-pdf', group: 'Convert to PDF', name: 'Images to PDF', blurb: 'Photos and scans to a single PDF.', icon: 'image', color: '#ff9f3f', accept: IMAGES, multi: true, action: 'Convert to PDF',
-      opts: [{ key: 'size', type: 'choice', label: 'Page size', def: 'fit', choices: [['fit', 'Same as image'], ['a4', 'A4'], ['letter', 'Letter']] },
+      opts: [{ key: 'size', type: 'choice', label: 'Page size', def: () => kit.settings.paper, choices: [['fit', 'Same as image'], ['a4', 'A4'], ['letter', 'Letter']] },
         { key: 'orientation', type: 'choice', label: 'Orientation', def: 'portrait', choices: [['portrait', 'Portrait'], ['landscape', 'Landscape']], when: (o) => o.size !== 'fit' },
         { key: 'margin', type: 'choice', label: 'Margin', def: 'none', choices: [['none', 'None'], ['small', 'Small'], ['big', 'Big']] }] },
     { id: 'pdf-to-word', group: 'Convert from PDF', name: 'PDF to Word', blurb: 'Editable DOCX with layout and tables.', icon: 'word', color: '#3b7bff', accept: PDF, action: 'Convert to Word', needs: 'word' },
@@ -95,76 +105,334 @@
   const byId = Object.fromEntries(TOOLS.map((t) => [t.id, t]));
   const glyph = (t) => h('span', { class: 'glyph', style: { background: t.color }, html: icon(t.icon) });
 
-  let engines = { pdf: true, word: true, office: true };
-  let handoff = null; // a result carried into the next tool
-  const app = $('#app');
+  // ─── app kit: settings, greeting, storage ─────────────────────────────
+  let storageLine = '';
+  const savedSignature = () => AppKit.load('documents:signature', null);
+  const kit = AppKit.create({
+    id: 'documents',
+    title: 'Documents',
+    fields: () => [
+      { type: 'heading', label: 'Your files' },
+      { key: 'keep', label: 'Keep recent files on this device', type: 'choice', def: '7', hint: 'In this browser only. Nothing is kept on the server.',
+        choices: [['0', 'Off'], ['1', '1 day'], ['7', '1 week'], ['30', '1 month']] },
+      { type: 'action', label: 'Recent files', hint: storageLine, button: 'Clear', danger: true, run: async (k, close) => {
+        if (!window.confirm('Remove all recent files and unsaved edits from this device?')) return;
+        await DB.clear('files'); await DB.clear('drafts');
+        close(); kit.toast('Recent files cleared'); if (isHome()) renderHome();
+      } },
+      { type: 'heading', label: 'Results' },
+      { key: 'autoDownload', label: 'Download results straight away', type: 'toggle', def: false },
+      { key: 'compression', label: 'Compression', type: 'choice', def: 'recommended', choices: [['low', 'Light'], ['recommended', 'Recommended'], ['extreme', 'Smallest']] },
+      { key: 'paper', label: 'Images to PDF page size', type: 'choice', def: 'fit', choices: [['fit', 'As image'], ['a4', 'A4'], ['letter', 'Letter']] },
+      { type: 'heading', label: 'Signature' },
+      { key: 'rememberSignature', label: 'Remember my signature', type: 'toggle', def: true, hint: 'Saved in this browser for next time' },
+      savedSignature() ? { type: 'action', label: 'Saved signature', button: 'Forget it', run: (k, close) => { kit.store.remove('signature'); close(); kit.toast('Signature forgotten'); } } : null,
+    ].filter(Boolean),
+    onChange: (key, value) => {
+      if (key === 'keep') prune().then(() => { if (isHome()) renderHome(); });
+      if (key === 'rememberSignature' && !value) kit.store.remove('signature');
+    },
+  });
+  const usage = () => kit.store.get('usage', {});
+  function used(toolId) { const u = usage(); u[toolId] = (u[toolId] || 0) + 1; kit.store.set('usage', u); }
 
-  // ─── server calls ─────────────────────────────────────────────────────
-  function upload(file, onProgress) {
+  // ─── IndexedDB: recent files and editor drafts, on this device only ───
+  const DB = (() => {
+    let dbp = null;
+    function open() {
+      if (!dbp) {
+        dbp = new Promise((resolve, reject) => {
+          const r = indexedDB.open('documents', 1);
+          r.onupgradeneeded = () => { r.result.createObjectStore('files', { keyPath: 'key' }); r.result.createObjectStore('drafts', { keyPath: 'key' }); };
+          r.onsuccess = () => resolve(r.result);
+          r.onerror = () => reject(r.error);
+        });
+      }
+      return dbp;
+    }
+    async function tx(store, mode, fn) {
+      const db = await open();
+      return new Promise((resolve, reject) => {
+        const t = db.transaction(store, mode);
+        const req = fn(t.objectStore(store));
+        t.oncomplete = () => resolve(req ? req.result : undefined);
+        t.onerror = t.onabort = () => reject(t.error);
+      });
+    }
+    const quiet = (p, fallback) => p.catch(() => fallback);  // private windows may block IndexedDB
+    return {
+      all: (s) => quiet(tx(s, 'readonly', (o) => o.getAll()), []),
+      get: (s, key) => quiet(tx(s, 'readonly', (o) => o.get(key)), null),
+      put: (s, v) => quiet(tx(s, 'readwrite', (o) => o.put(v)), null),
+      del: (s, key) => quiet(tx(s, 'readwrite', (o) => o.delete(key)), null),
+      clear: (s) => quiet(tx(s, 'readwrite', (o) => o.clear()), null),
+    };
+  })();
+  const KEEP_BYTES = 500e6;
+
+  async function remember(doc, source, tool) {
+    const days = +kit.settings.keep;
+    if (!days || doc.remembered) return;
+    doc.remembered = true;
+    const all = await DB.all('files');
+    const same = all.find((r) => r.key === doc.key || (source === 'added' && r.source === 'added' && r.name === doc.name && r.size === doc.size));
+    if (same) { doc.key = same.key; await DB.put('files', { ...same, used: Date.now() }); return; }
+    let thumb = null;
+    try { thumb = await thumbURL(doc, 1, 180); } catch (e) { /* no preview */ }
+    await DB.put('files', { key: doc.key, name: doc.name, size: doc.size, type: doc.blob.type, blob: doc.blob, pages: doc.pages,
+      pdf: doc.pdf, encrypted: doc.encrypted, thumb, source, tool: tool || null, added: Date.now(), used: Date.now() });
+    await prune();
+  }
+  async function prune() {
+    const days = +kit.settings.keep;
+    if (!days) { await DB.clear('files'); await DB.clear('drafts'); return; }
+    const all = (await DB.all('files')).sort((a, b) => b.used - a.used);
+    let total = 0;
+    for (const r of all) {
+      total += r.size;
+      if (Date.now() - r.used > days * 864e5 || total > KEEP_BYTES) { await DB.del('files', r.key); await DB.del('drafts', r.key); }
+    }
+  }
+  async function forget(key) { await DB.del('files', key); await DB.del('drafts', key); }
+
+  // ─── documents in the browser, previews with pdf.js ──────────────────
+  const BASE = document.baseURI;
+  let pdfjs = null;
+  async function lib() {
+    if (!pdfjs) {
+      pdfjs = await import('./vendor/pdfjs/pdf.min.mjs');
+      pdfjs.GlobalWorkerOptions.workerSrc = new URL('vendor/pdfjs/pdf.worker.min.mjs', BASE).href;
+    }
+    return pdfjs;
+  }
+  const opened = new Map(); // doc key → PDFDocumentProxy promise
+  function pdfOf(doc) {
+    if (!opened.has(doc.key)) {
+      opened.set(doc.key, (async () => {
+        const { getDocument } = await lib();
+        const data = new Uint8Array(await doc.blob.arrayBuffer());
+        return getDocument({ data, cMapUrl: new URL('vendor/pdfjs/cmaps/', BASE).href, cMapPacked: true,
+          standardFontDataUrl: new URL('vendor/pdfjs/standard_fonts/', BASE).href, wasmUrl: new URL('vendor/pdfjs/wasm/', BASE).href }).promise;
+      })());
+      opened.get(doc.key).catch(() => opened.delete(doc.key));
+    }
+    return opened.get(doc.key);
+  }
+  async function makeDoc(blob, name, key) {
+    const ext = extOf(name);
+    const doc = { key: key || uid(), name, size: blob.size, ext, blob, pdf: false, encrypted: false, pages: null, image: IMAGE_EXT.includes(ext) };
+    if (ext === 'pdf' || blob.type === 'application/pdf') {
+      doc.pdf = true;
+      try {
+        doc.pages = (await pdfOf(doc)).numPages;
+      } catch (e) {
+        if (e && e.name === 'PasswordException') doc.encrypted = true;
+        else { doc.pdf = false; doc.broken = true; }
+      }
+    }
+    return doc;
+  }
+  async function sizesOf(doc) {
+    const pdf = await pdfOf(doc);
+    const out = [];
+    for (let i = 1; i <= pdf.numPages; i++) {
+      const v = (await pdf.getPage(i)).getViewport({ scale: 1 });
+      out.push([v.width, v.height]);
+    }
+    return out;
+  }
+  async function renderPage(doc, n, width, canvas) {
+    const page = await (await pdfOf(doc)).getPage(n);
+    const vp = page.getViewport({ scale: width / page.getViewport({ scale: 1 }).width });
+    canvas = canvas || document.createElement('canvas');
+    canvas.width = Math.round(vp.width);
+    canvas.height = Math.round(vp.height);
+    await page.render({ canvasContext: canvas.getContext('2d'), viewport: vp }).promise;
+    return canvas;
+  }
+  async function thumbURL(doc, n, width) {
+    if (doc.image) {
+      const bmp = await createImageBitmap(doc.blob);
+      const c = h('canvas', { width, height: Math.max(1, Math.round(width * bmp.height / bmp.width)) });
+      c.getContext('2d').drawImage(bmp, 0, 0, c.width, c.height);
+      bmp.close();
+      return c.toDataURL('image/jpeg', 0.8);
+    }
+    if (!doc.pdf || doc.encrypted) return null;
+    return (await renderPage(doc, n, width)).toDataURL('image/jpeg', 0.8);
+  }
+  // An <img> that draws itself when it scrolls into view.
+  const lazy = 'IntersectionObserver' in window ? new IntersectionObserver((entries) => {
+    for (const e of entries) if (e.isIntersecting) { lazy.unobserve(e.target); e.target._draw(); }
+  }, { rootMargin: '200px' }) : null;
+  function thumbImg(doc, n, width, extra) {
+    const img = h('img', { alt: '', ...(extra || {}) });
+    img._draw = () => thumbURL(doc, n, width).then((u) => { if (u) img.src = u; }).catch(() => {});
+    lazy ? lazy.observe(img) : img._draw();
+    return img;
+  }
+  function download(blob, name) {
+    const a = h('a', { href: URL.createObjectURL(blob), download: name });
+    document.body.append(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(a.href), 60000);
+  }
+
+  // ─── the server: one request in, results straight back ───────────────
+  let engines = { pdf: true, word: true, office: true }, maxBytes = 200 * 1024 * 1024;
+  function runTool(tool, docs, options, onProgress) {
+    const total = docs.reduce((a, d) => a + d.size, 0);
+    if (total > maxBytes) return Promise.reject(new Error(`That’s ${size(total)}; Documents takes up to ${size(maxBytes)} at a time.`));
+    used(tool);
     return new Promise((resolve, reject) => {
+      const form = new FormData();
+      form.append('request', JSON.stringify({ tool, options }));
+      docs.forEach((d) => form.append('file', d.blob, d.name));
       const xhr = new XMLHttpRequest();
-      xhr.open('POST', './api/files?name=' + encodeURIComponent(file.name));
-      xhr.upload.onprogress = (e) => e.lengthComputable && onProgress(e.loaded / e.total);
-      xhr.onload = () => {
-        let body = {};
-        try { body = JSON.parse(xhr.responseText); } catch (e) { /* not JSON */ }
-        xhr.status === 201 ? resolve(body) : reject(new Error(body.error || 'Upload failed'));
+      xhr.open('POST', './api/run');
+      xhr.responseType = 'blob';
+      xhr.upload.onprogress = (e) => e.lengthComputable && onProgress && onProgress(e.loaded / e.total);
+      xhr.onload = async () => {
+        if (xhr.status !== 200) {
+          let msg = xhr.status === 413 ? 'Those files are too big to send in one go' : 'That didn’t work';
+          try { msg = JSON.parse(await xhr.response.text()).error || msg; } catch (e) { /* not JSON */ }
+          return reject(new Error(msg));
+        }
+        try {
+          const fd = await new Response(xhr.response, { headers: { 'Content-Type': xhr.getResponseHeader('Content-Type') } }).formData();
+          const files = fd.getAll('file');
+          resolve(await Promise.all(files.map((f) => makeDoc(f, f.name))));
+        } catch (e) {
+          reject(new Error('Couldn’t read the result'));
+        }
       };
-      xhr.onerror = () => reject(new Error('Upload failed. Is Documents still running?'));
-      xhr.send(file);
+      xhr.onerror = () => reject(new Error('Couldn’t reach Documents. Is it still running?'));
+      xhr.send(form);
     });
   }
-  async function runTool(tool, ids, options) {
-    const r = await fetch('./api/run', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ tool, files: ids, options }) });
-    const body = await r.json().catch(() => ({}));
-    if (!r.ok) throw new Error(body.error || 'That didn’t work');
-    return body;
-  }
-  const fileURL = (f, extra) => `./api/files/${f.id}${extra || ''}`;
-  const pageURL = (f, n, w) => `./api/files/${f.id}/pages/${n}.png?w=${w}`;
 
   // ─── routing ──────────────────────────────────────────────────────────
-  function route() {
+  let handoff = null; // files carried into the next tool
+  const app = $('#app');
+  const isHome = () => !/^#\/(t|edit)\//.test(location.hash);
+  async function route() {
     closeEditor();
+    window.scrollTo(0, 0);
+    const edit = location.hash.match(/^#\/edit\/([\w-]+)/);
+    if (edit) return resumeDraft(edit[1]);
     const m = location.hash.match(/^#\/t\/([\w-]+)/);
     const t = m && byId[m[1]];
-    window.scrollTo(0, 0);
     t ? renderTool(t) : renderHome();
   }
   window.addEventListener('hashchange', route);
+  function openWith(docs, toolId) {
+    handoff = docs;
+    if (location.hash === '#/t/' + toolId) route(); else location.hash = '#/t/' + toolId;
+  }
 
   // ─── home ─────────────────────────────────────────────────────────────
-  function renderHome() {
+  function toolsFor(r) {
+    if (r.pdf && r.encrypted) return ['unlock'];
+    if (r.pdf) return ['edit', 'sign', 'compress', 'organize', 'split', 'merge', 'pdf-to-word', 'pdf-to-images', 'page-numbers', 'watermark', 'protect', 'pdf-to-text'];
+    if (IMAGE_EXT.includes(extOf(r.name))) return ['images-to-pdf', 'merge'];
+    if (OFFICE_EXT.includes(extOf(r.name))) return ['office-to-pdf'];
+    return [];
+  }
+  async function docFromRecord(r) {
+    const doc = await makeDoc(r.blob, r.name, r.key);
+    doc.remembered = true;
+    DB.put('files', { ...r, used: Date.now() });
+    return doc;
+  }
+  function fileSheet(r) {
+    const tools = toolsFor(r);
+    let close;
+    const body = h('div', { class: 'sheet' },
+      h('div', { class: 'sheet-file' }, h('div', { class: 'thumb small' }, r.thumb ? h('img', { src: r.thumb, alt: '' }) : h('span', { class: 'ext' }, extOf(r.name) || 'file')),
+        h('div', {}, h('p', { class: 'note' }, [r.pages ? plural(r.pages, 'page') : null, size(r.size), r.tool ? `from ${byId[r.tool]?.name || r.tool}` : 'added', kit.ago(r.added)].filter(Boolean).join(' · ')))),
+      tools.length ? h('p', { class: 'note', style: { margin: '16px 0 8px' } }, 'Open with') : null,
+      h('div', { class: 'ak-chips' }, tools.map((id) => h('button', { class: 'ak-chip', onclick: async () => { close(); openWith([await docFromRecord(r)], id); } },
+        h('span', { class: 'mini-glyph', style: { background: byId[id].color }, html: icon(byId[id].icon) }), byId[id].name))));
+    close = kit.modal(r.name, body, [
+      h('button', { class: 'ak-pill danger', onclick: async () => { await forget(r.key); close(); renderHome(); } }, 'Remove'),
+      h('button', { class: 'ak-pill', onclick: () => download(r.blob, r.name) }, 'Download'),
+    ]);
+  }
+
+  async function renderHome() {
     document.title = 'Documents';
+    const [recent, drafts] = await Promise.all([DB.all('files'), DB.all('drafts')]);
+    if (!isHome()) return;
+    recent.sort((a, b) => b.used - a.used);
+    const bytes = recent.reduce((a, r) => a + r.size, 0);
+    storageLine = recent.length ? `${plural(recent.length, 'file')} · ${size(bytes)} on this device` : 'Nothing kept yet';
+
     const groups = h('div');
     const search = h('input', { type: 'search', placeholder: 'Find a tool: merge, word, sign…', 'aria-label': 'Find a tool',
       oninput: () => fill(search.value.trim().toLowerCase()) });
+    const card = (t) => h('a', { class: 'tool', href: '#/t/' + t.id }, glyph(t), h('b', {}, t.name), h('span', { class: 'blurb' }, t.blurb));
     function fill(q) {
       groups.replaceChildren(...GROUPS.map((g) => {
         const list = TOOLS.filter((t) => t.group === g && (!q || (t.name + ' ' + t.blurb + ' ' + t.group).toLowerCase().includes(q)));
         if (!list.length) return null;
-        return h('section', { class: 'group' }, h('h2', {}, g),
-          h('div', { class: 'grid' }, list.map((t) => h('a', { class: 'tool', href: '#/t/' + t.id }, glyph(t), h('b', {}, t.name), h('span', { class: 'blurb' }, t.blurb)))));
+        return h('section', { class: 'group' }, h('h2', {}, g), h('div', { class: 'grid' }, list.map(card)));
       }).filter(Boolean));
       if (!groups.children.length) groups.append(h('p', { class: 'note', style: { marginTop: '24px' } }, 'No tool matches that.'));
     }
+
+    // Pick up where you left off: unsaved edits.
+    const byKey = Object.fromEntries(recent.map((r) => [r.key, r]));
+    const live = drafts.filter((d) => byKey[d.key] && d.items && d.items.length).sort((a, b) => b.updated - a.updated);
+    const draftSection = live.length ? h('section', { class: 'ak-section' },
+      h('div', { class: 'ak-section-head' }, h('h2', {}, 'Pick up where you left off')),
+      h('div', { class: 'drafts' }, live.slice(0, 3).map((d) => {
+        const r = byKey[d.key];
+        return h('a', { class: 'draft', href: '#/edit/' + d.key },
+          h('div', { class: 'thumb small' }, r.thumb ? h('img', { src: r.thumb, alt: '' }) : null),
+          h('div', { class: 'grow' }, h('b', {}, (d.mode === 'sign' ? 'Finish signing ' : 'Continue editing ') + r.name),
+            h('p', { class: 'note' }, `${plural(d.items.length, 'change')} · ${kit.ago(d.updated)}`)),
+          h('span', { class: 'ink-btn small' }, 'Continue'));
+      }))) : null;
+
+    // Your recent files, kept in this browser.
+    const recentSection = h('section', { class: 'ak-section' },
+      h('div', { class: 'ak-section-head' }, h('h2', {}, 'Recent files'),
+        recent.length ? h('button', { onclick: () => kit.openSettings() }, 'Manage') : null),
+      +kit.settings.keep === 0
+        ? h('p', { class: 'ak-empty' }, 'Recent files are off, so nothing is kept after you leave. Turn them on in Settings.')
+        : recent.length
+          ? h('div', { class: 'recent' }, recent.slice(0, 12).map((r) => h('button', { class: 'rfile', onclick: () => fileSheet(r), title: r.name },
+            h('div', { class: 'thumb' }, r.thumb ? h('img', { src: r.thumb, alt: '' }) : h('span', { class: 'ext' }, r.encrypted ? '🔒' : (extOf(r.name) || 'file'))),
+            h('span', { class: 'name' }, r.name),
+            h('span', { class: 'meta' }, (r.tool ? (byId[r.tool]?.name || 'Result') : 'Added') + ' · ' + kit.ago(r.used)))))
+          : h('p', { class: 'ak-empty' }, 'Files you add and the results you make show up here, so you can pick them up again.'));
+
+    // Your tools: the ones you use most.
+    const u = usage();
+    const favourites = Object.keys(u).filter((id) => byId[id]).sort((a, b) => u[b] - u[a]).slice(0, 4);
+    const yours = favourites.length ? h('section', { class: 'ak-section' },
+      h('div', { class: 'ak-section-head' }, h('h2', {}, 'Your tools')),
+      h('div', { class: 'grid compact' }, favourites.map((id) => card(byId[id])))) : null;
+
     const missing = [];
     if (!engines.office) missing.push('Office to PDF needs LibreOffice on the Hub machine.');
     if (!engines.word) missing.push('PDF to Word needs pdf2docx: <code>pip install -r apps/documents/requirements.txt</code>.');
     app.replaceChildren(h('div', { class: 'wrap' },
-      h('h1', {}, 'Documents'),
-      h('p', { class: 'lead' }, 'Merge, split, convert, edit and sign documents. Everything happens on this computer, and files are deleted after two hours.'),
-      h('label', { class: 'search' }, h('span', { html: icon('search'), style: { display: 'flex', width: '20px', color: 'var(--muted)' } }), search),
-      missing.length ? h('p', { class: 'engine-note', html: missing.join(' ') }) : null,
-      groups));
+      kit.header({ tagline: 'Merge, split, convert, edit and sign.' }),
+      h('p', { class: 'privacy' }, h('span', { html: icon('device') }), 'Your files stay on this device. Documents works on them in memory and keeps nothing.'),
+      draftSection, recentSection, yours,
+      h('section', { class: 'ak-section' },
+        h('div', { class: 'ak-section-head' }, h('h2', {}, 'All tools')),
+        h('label', { class: 'search' }, h('span', { html: icon('search'), style: { display: 'flex', width: '20px', color: 'var(--muted)' } }), search),
+        missing.length ? h('p', { class: 'engine-note', html: missing.join(' ') }) : null,
+        groups)));
     fill('');
   }
 
   // ─── tool page ────────────────────────────────────────────────────────
   function renderTool(t) {
     document.title = t.name + ' · Documents';
-    const opts = Object.fromEntries((t.opts || []).map((o) => [o.key, o.def]));
-    const state = { files: handoff ? [handoff] : [], uploads: [], error: '', running: false, result: null };
+    const opts = Object.fromEntries((t.opts || []).map((o) => [o.key, typeof o.def === 'function' ? o.def() : o.def]));
+    const state = { files: handoff ? handoff.slice(0, t.multi ? undefined : 1) : [], reading: 0, error: '', running: false, progress: 0, result: null };
     handoff = null;
     let organizeState = null;
 
@@ -173,29 +441,22 @@
     async function add(list) {
       const picked = Array.from(list);
       if (!t.multi) { state.files = []; picked.splice(1); }
+      state.reading += picked.length;
+      state.result = null;
+      render();
       for (const file of picked) {
-        const u = { name: file.name, progress: 0 };
-        state.uploads.push(u);
-        render();
         try {
-          const meta = await upload(file, (p) => { u.progress = p; paintUploads(); });
-          if (t.accept === PDF && !meta.pdf) throw new Error(`${file.name} isn’t a PDF`);
-          state.files.push(meta);
+          const doc = await makeDoc(file, file.name);
+          if (t.accept === PDF && !doc.pdf) throw new Error(`${file.name} isn’t a PDF`);
+          state.files.push(doc);
           state.error = '';
+          remember(doc, 'added');
         } catch (e) {
           state.error = e.message;
         }
-        state.uploads.splice(state.uploads.indexOf(u), 1);
-        state.result = null;
+        state.reading--;
         render();
       }
-    }
-    let uploadsBox = null;
-    function paintUploads() {
-      if (!uploadsBox) return;
-      uploadsBox.replaceChildren(...state.uploads.map((u) => h('div', { class: 'file' },
-        h('div', { class: 'thumb' }, h('span', { class: 'ext' }, '…')), h('span', { class: 'name' }, u.name),
-        h('div', { class: 'bar' }, h('span', { style: { width: (u.progress * 100) + '%' } })))));
     }
 
     function dropzone(compact) {
@@ -210,8 +471,8 @@
     }
 
     function fileCard(f, i) {
-      const thumb = f.pdf && !f.encrypted
-        ? h('img', { src: pageURL(f, 1, 240), alt: '' })
+      const thumb = (f.pdf && !f.encrypted) || f.image
+        ? thumbImg(f, 1, 240)
         : h('span', { class: 'ext' }, f.encrypted ? '🔒' : (f.ext || 'file'));
       const move = (d) => { const j = i + d; [state.files[i], state.files[j]] = [state.files[j], state.files[i]]; state.result = null; render(); };
       return h('div', { class: 'file' },
@@ -253,9 +514,20 @@
       if (t.id === 'protect' && opts.password !== opts.confirm) { state.error = 'The two passwords don’t match'; return render(); }
       const options = { ...opts };
       if (t.id === 'watermark') options.opacity = opts.opacity / 100;
-      state.running = true; state.error = ''; render();
+      await run(() => runTool(t.id, state.files, options, progress));
+    }
+    let progressBar = null;
+    function progress(p) {
+      state.progress = p;
+      if (progressBar) progressBar.style.width = Math.round(p * 100) + '%';
+    }
+    async function run(job) {
+      state.running = true; state.error = ''; state.progress = 0; render();
       try {
-        state.result = await runTool(t.id, state.files.map((f) => f.id), options);
+        const outputs = await job();
+        state.result = { outputs, inputSize: state.files.reduce((a, f) => a + f.size, 0) };
+        outputs.forEach((o) => remember(o, 'result', t.id));
+        if (kit.settings.autoDownload) outputs.forEach((o) => download(o.blob, o.name));
       } catch (e) {
         state.error = e.message;
       }
@@ -269,22 +541,32 @@
       const outs = r.outputs;
       const total = outs.reduce((a, o) => a + o.size, 0);
       const saved = t.id === 'compress' && r.inputSize ? Math.round((1 - total / r.inputSize) * 100) : null;
-      const next = outs.length === 1 && outs[0].pdf ? ['compress', 'edit', 'sign', 'merge', 'split', 'page-numbers', 'watermark', 'protect'].filter((x) => x !== t.id) : [];
+      const next = outs.length === 1 && outs[0].pdf && !outs[0].encrypted
+        ? ['compress', 'edit', 'sign', 'merge', 'split', 'page-numbers', 'watermark', 'protect'].filter((x) => x !== t.id) : [];
       return h('section', { class: 'result' },
         h('h2', {}, outs.length === 1 ? 'Your file is ready' : `${outs.length} files are ready`),
         saved != null ? h('span', { class: 'saving' }, saved > 0 ? `${size(r.inputSize)} → ${size(total)} · ${saved}% smaller` : 'Already as small as it gets') : null,
-        h('div', { class: 'dl' }, outs.map((o) => h('a', { class: 'ink-btn', href: fileURL(o), download: o.name }, 'Download ' + o.name + ' · ' + size(o.size)))),
+        h('div', { class: 'dl' }, outs.map((o) => h('button', { class: 'ink-btn', onclick: () => download(o.blob, o.name) },
+          h('span', { html: icon('download'), style: { display: 'flex', width: '18px' } }), 'Download ' + o.name + ' · ' + size(o.size)))),
+        +kit.settings.keep ? h('p', { class: 'note', style: { margin: '10px 0 0' } }, 'Also kept in Recent files on this device.') : null,
         next.length ? h('div', {}, h('p', { class: 'note', style: { margin: '18px 0 0' } }, 'Keep going with this file'),
-          h('div', { class: 'chain' }, next.map((id) => h('button', { class: 'pill-btn', onclick: () => { handoff = outs[0]; location.hash = '#/t/' + id; } }, byId[id].name)))) : null,
+          h('div', { class: 'chain' }, next.map((id) => h('button', { class: 'pill-btn', onclick: () => openWith([outs[0]], id) }, byId[id].name)))) : null,
         h('div', { class: 'chain' }, h('button', { class: 'pill-btn', onclick: () => { state.files = []; state.result = null; render(); } }, 'Start over')));
     }
 
+    function actionButton(label, onclick, disabled) {
+      if (!state.running) return h('button', { class: 'ink-btn', disabled, onclick }, label);
+      progressBar = h('span', { style: { width: Math.round(state.progress * 100) + '%' } });
+      return h('div', { class: 'working' }, h('button', { class: 'ink-btn', disabled: true }, h('span', { class: 'spinner' }), 'Working…'),
+        h('div', { class: 'bar', title: 'Sending to Documents' }, progressBar));
+    }
+
     function render() {
-      if (t.special === 'editor' && state.files.length && !state.uploads.length) return openEditor(state.files[0], t.id === 'sign' ? 'sign' : 'edit');
+      if (t.special === 'editor' && state.files.length && !state.reading) return openEditor(state.files[0], t.id === 'sign' ? 'sign' : 'edit');
       const unavailable = t.needs && !engines[t.needs];
       const body = h('div', { class: 'wrap' },
-        h('a', { class: 'back', href: '#/' }, h('span', { html: icon('back'), style: { display: 'flex', width: '16px' } }), 'All tools'),
-        h('div', { class: 'tool-head' }, glyph(t), h('div', {}, h('h1', {}, t.name), h('p', { class: 'lead', style: { marginTop: '6px' } }, t.blurb))),
+        h('a', { class: 'back', href: '#/' }, h('span', { html: icon('back'), style: { display: 'flex', width: '16px' } }), 'Documents'),
+        h('div', { class: 'tool-head' }, glyph(t), h('div', { class: 'grow' }, h('h1', {}, t.name), h('p', { class: 'lead', style: { marginTop: '6px' } }, t.blurb)), kit.settingsButton()),
         unavailable ? h('p', { class: 'engine-note', html: t.needs === 'office'
           ? 'This needs LibreOffice on the Hub machine. Install it from libreoffice.org, then restart Documents.'
           : 'This needs pdf2docx: run <code>pip install -r apps/documents/requirements.txt</code>, then restart Documents.' }) : null,
@@ -294,16 +576,12 @@
       } else {
         if (!state.files.length || t.multi) body.append(dropzone(state.files.length > 0));
         const grid = h('div', { class: 'files' }, state.files.map(fileCard));
-        uploadsBox = h('div', { style: { display: 'contents' } });
-        grid.append(uploadsBox);
-        if (state.files.length || state.uploads.length) body.append(grid);
-        paintUploads();
+        for (let i = 0; i < state.reading; i++) grid.append(h('div', { class: 'file' }, h('div', { class: 'thumb' }, h('span', { class: 'spinner' })), h('span', { class: 'name' }, 'Reading…')));
+        if (state.files.length || state.reading) body.append(grid);
         if (state.files.length && !t.special) {
           const fields = optionFields();
           if (fields) body.append(fields);
-          body.append(h('div', { class: 'actions' },
-            h('button', { class: 'ink-btn', disabled: state.running || unavailable, onclick: go },
-              state.running ? [h('span', { class: 'spinner' }), 'Working…'] : t.action),
+          body.append(h('div', { class: 'actions' }, actionButton(t.action, go, !!(unavailable || state.reading)),
             state.error ? h('span', { class: 'err', role: 'alert' }, state.error) : null));
         } else if (state.error) {
           body.append(h('p', { class: 'err', role: 'alert' }, state.error));
@@ -316,15 +594,19 @@
     // Organize: thumbnails you can drag, rotate and delete.
     function organizeView(f) {
       if (!organizeState || organizeState.file !== f) {
-        organizeState = { file: f, pages: Array.from({ length: f.pages || 0 }, (_, i) => ({ index: i, rotate: 0 })) };
+        organizeState = { file: f, pages: Array.from({ length: f.pages || 0 }, (_, i) => ({ index: i, rotate: 0 })), imgs: {} };
       }
       const pages = organizeState.pages;
+      const imgFor = (p) => {  // keep drawn thumbnails across repaints
+        const img = organizeState.imgs[p.index] || (organizeState.imgs[p.index] = thumbImg(f, p.index + 1, 220));
+        img.style.transform = `rotate(${p.rotate}deg)`;
+        return img;
+      };
       let dragFrom = null;
       const grid = h('div', { class: 'pages' });
       const paint = () => grid.replaceChildren(...pages.map((p, i) => {
-        const img = h('img', { src: pageURL(f, p.index + 1, 220), alt: '', loading: i < 24 ? 'eager' : 'lazy', style: { transform: `rotate(${p.rotate}deg)` } });
         const card = h('div', { class: 'pg', draggable: 'true', tabindex: 0, 'aria-label': `Page ${p.index + 1}, position ${i + 1}. Arrow keys move it, R rotates, Delete removes.` },
-          h('div', { class: 'thumb' }, img),
+          h('div', { class: 'thumb' }, imgFor(p)),
           h('span', { class: 'num' }, 'Page ' + (p.index + 1)),
           h('div', { class: 'ctrl' },
             h('button', { class: 'icon-btn', 'aria-label': 'Rotate', html: icon('turn'), onclick: () => { p.rotate = (p.rotate + 90) % 360; paint(); } }),
@@ -350,19 +632,17 @@
         return card;
       }));
       paint();
-      const save = async () => {
-        state.running = true; state.error = ''; render();
-        try { state.result = await runTool('organize', [f.id], { pages }); } catch (e) { state.error = e.message; }
-        state.running = false;
+      const save = () => run(async () => {
+        const out = await runTool('organize', [f], { pages }, progress);
         organizeState = null;
-        state.files = state.result ? [] : state.files;
-        render();
-      };
+        state.files = [];
+        return out;
+      });
       return h('div', {},
         h('p', { class: 'note', style: { marginTop: '20px' } }, `${f.name} · drag pages to reorder, or use the arrow keys.`),
         grid,
         h('div', { class: 'actions' },
-          h('button', { class: 'ink-btn', disabled: state.running || !pages.length, onclick: save }, state.running ? [h('span', { class: 'spinner' }), 'Saving…'] : 'Save PDF'),
+          actionButton('Save PDF', save, !pages.length),
           h('button', { class: 'pill-btn', onclick: () => { organizeState = null; state.files = []; render(); } }, 'Choose another file'),
           state.error ? h('span', { class: 'err', role: 'alert' }, state.error) : null));
     }
@@ -379,19 +659,45 @@
 
   // ─── PDF editor ───────────────────────────────────────────────────────
   let editorEl = null;
-  function closeEditor() { if (editorEl) { editorEl.remove(); editorEl = null; } }
+  let editorCleanup = null;
+  function closeEditor() {
+    if (editorCleanup) { editorCleanup(); editorCleanup = null; }
+    if (editorEl) { editorEl.remove(); editorEl = null; }
+  }
 
-  function openEditor(file, mode) {
+  async function resumeDraft(key) {
+    const [r, d] = await Promise.all([DB.get('files', key), DB.get('drafts', key)]);
+    if (!r) { location.hash = '#/'; return; }
+    openEditor(await docFromRecord(r), (d && d.mode) || 'edit', d ? d.items : []);
+  }
+
+  async function openEditor(file, mode, restored) {
     closeEditor();
-    const sizes = file.sizes || [];
-    let items = [];
+    const at = location.hash;
+    app.replaceChildren(h('div', { class: 'wrap' }, h('p', { class: 'note opening' }, h('span', { class: 'spinner' }), 'Opening ' + file.name + '…')));
+    let sizes;
+    try { sizes = await sizesOf(file); } catch (e) { app.replaceChildren(h('div', { class: 'wrap' }, h('p', { class: 'err' }, 'Couldn’t open ' + file.name))); return; }
+    if (location.hash !== at) return;  // moved on while it opened
+    if (!file.remembered && +kit.settings.keep) remember(file, 'added');
+    let items = restored ? JSON.parse(JSON.stringify(restored)) : [];
     const undoStack = [];
     let tool = mode === 'sign' ? 'select' : 'text';
     let selected = null;
     const props = { color: '#1c1a16', size: 14, width: 2 };
     const pages = [];
     const snapshot = () => { undoStack.push(JSON.stringify(items)); if (undoStack.length > 50) undoStack.shift(); };
-    const uid = () => Math.random().toString(36).slice(2, 9);
+    const newId = () => Math.random().toString(36).slice(2, 9);
+
+    // Unsaved edits are kept on this device, so you can come back to them.
+    let draftTimer = 0;
+    function keepDraft() {
+      clearTimeout(draftTimer);
+      draftTimer = setTimeout(() => {
+        if (!+kit.settings.keep) return;
+        if (items.length) DB.put('drafts', { key: file.key, items, mode, updated: Date.now() });
+        else DB.del('drafts', file.key);
+      }, 400);
+    }
 
     const TBTN = [['select', 'Select'], ['text', 'Text'], ['whiteout', 'Whiteout'], ['highlight', 'Highlight'], ['draw', 'Draw'], ['redact', 'Redact']];
     const toolButtons = TBTN.map(([id, label]) => h('button', { class: 'tbtn', 'aria-pressed': String(tool === id), title: label,
@@ -421,7 +727,7 @@
     const status = h('span', { class: 'note', role: 'status' });
 
     const bar = h('div', { class: 'etools' },
-      h('button', { class: 'tbtn', onclick: () => { location.hash = '#/'; }, html: icon('back') + '<span class="lbl">Tools</span>' }),
+      h('button', { class: 'tbtn', onclick: () => { location.hash = '#/'; }, html: icon('back') + '<span class="lbl">Documents</span>' }),
       h('span', { class: 'sep' }), toolButtons,
       h('button', { class: 'tbtn', title: 'Image', onclick: () => imgInput.click(), html: icon('image') + '<span class="lbl">Image</span>' }),
       h('button', { class: 'tbtn', title: 'Signature', onclick: () => signatureModal((data) => placeImage(data, 170)), html: icon('sign') + '<span class="lbl">Sign</span>' }),
@@ -433,34 +739,46 @@
     document.body.append(editorEl);
     app.replaceChildren();
 
-    // Pages, sized to the window.
+    // Pages, sized to the window and drawn by pdf.js as they scroll into view.
+    const seen = new IntersectionObserver((entries) => {
+      for (const e of entries) if (e.isIntersecting) draw(pages[+e.target.dataset.i]);
+    }, { root: scroller, rootMargin: '600px 0px' });
+    function draw(p) {
+      const want = Math.round(p.el.clientWidth * (window.devicePixelRatio || 1));
+      if (p.drawn >= want || p.drawing) return;
+      p.drawing = true;
+      renderPage(file, p.n, Math.min(2400, want), p.canvas).then(() => { p.drawn = want; }).catch(() => {}).finally(() => { p.drawing = false; });
+    }
     for (let i = 0; i < sizes.length; i++) {
-      const el = h('div', { class: 'epage' }, h('span', { class: 'label' }, `Page ${i + 1} of ${sizes.length}`));
-      const img = h('img', { alt: `Page ${i + 1}`, loading: 'lazy' });
+      const el = h('div', { class: 'epage', 'data-i': i }, h('span', { class: 'label' }, `Page ${i + 1} of ${sizes.length}`));
+      const canvas = h('canvas', { 'aria-label': `Page ${i + 1}` });
       const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
       svg.setAttribute('class', 'ink');
       const layer = h('div', { class: 'layer' });
-      el.append(img, svg, layer);
+      el.append(canvas, svg, layer);
       scroller.append(el);
-      pages.push({ el, img, svg, layer, w: sizes[i][0], h: sizes[i][1], scale: 1 });
+      pages.push({ el, n: i + 1, canvas, svg, layer, w: sizes[i][0], h: sizes[i][1], scale: 1, drawn: 0 });
       layer.addEventListener('pointerdown', (e) => pointerDown(e, i));
+      seen.observe(el);
     }
     function layout() {
       const avail = Math.min(scroller.clientWidth - 32, 980);
-      pages.forEach((p, i) => {
+      pages.forEach((p) => {
         const w = Math.max(280, avail);
         p.scale = w / p.w;
         p.el.style.width = w + 'px';
         p.el.style.height = (p.h * p.scale) + 'px';
-        const want = Math.round(w * (window.devicePixelRatio || 1));
-        if (!p.img.dataset.w || +p.img.dataset.w < want) { p.img.src = pageURL(file, i + 1, Math.min(2400, want)); p.img.dataset.w = want; }
       });
+      pages.forEach((p) => { const r = p.el.getBoundingClientRect(); if (r.bottom > -600 && r.top < window.innerHeight + 600) draw(p); });
       paintAll();
     }
     window.addEventListener('resize', layout);
+    document.addEventListener('keydown', onKey);
+    editorCleanup = () => { window.removeEventListener('resize', layout); document.removeEventListener('keydown', onKey); seen.disconnect(); clearTimeout(draftTimer); };
     requestAnimationFrame(layout);
     setTool(tool);
-    if (mode === 'sign') setTimeout(() => signatureModal((data) => placeImage(data, 170)), 300);
+    if (mode === 'sign' && !items.length) setTimeout(() => signatureModal((data) => placeImage(data, 170)), 300);
+    if (restored && restored.length) kit.toast('Picked up ' + plural(restored.length, 'unsaved change'));
 
     function visiblePage() {
       const top = scroller.getBoundingClientRect().top;
@@ -476,7 +794,7 @@
         const w = Math.min(widthPts, p.w * 0.6);
         const hgt = w * (im.naturalHeight / im.naturalWidth);
         snapshot();
-        const it = { id: uid(), page: pi, type: 'image', x: (p.w - w) / 2, y: p.h * 0.6, w, h: hgt, data };
+        const it = { id: newId(), page: pi, type: 'image', x: (p.w - w) / 2, y: p.h * 0.6, w, h: hgt, data };
         items.push(it);
         selected = it;
         setTool('select');
@@ -486,9 +804,8 @@
     }
 
     function undo() { if (undoStack.length) { items = JSON.parse(undoStack.pop()); selected = null; paintAll(); } }
-    document.addEventListener('keydown', onKey);
     function onKey(e) {
-      if (!editorEl) { document.removeEventListener('keydown', onKey); return; }
+      if (document.querySelector('.ak-modal-back, .modal-back')) return;
       const editing = document.activeElement && document.activeElement.isContentEditable;
       if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z' && !editing) { e.preventDefault(); undo(); }
       if ((e.key === 'Delete' || e.key === 'Backspace') && selected && !editing) { e.preventDefault(); snapshot(); items = items.filter((x) => x !== selected); selected = null; paintAll(); }
@@ -533,6 +850,7 @@
         }
       });
       status.textContent = items.length ? plural(items.length, 'change') : '';
+      keepDraft();
     }
     function itemBox(it, x, y, w, hh, s, cls) {
       const el = h('div', { class: `item ${cls}${selected === it ? ' sel' : ''}`, style: { left: x * s + 'px', top: y * s + 'px', width: w * s + 'px', height: hh * s + 'px' } });
@@ -604,7 +922,7 @@
 
       if (tool === 'text') {
         snapshot();
-        const it = { id: uid(), page: pi, type: 'text', x: x0, y: y0 - props.size * 0.6, w: 40, h: props.size * 1.3, text: '', size: props.size, color: props.color };
+        const it = { id: newId(), page: pi, type: 'text', x: x0, y: y0 - props.size * 0.6, w: 40, h: props.size * 1.3, text: '', size: props.size, color: props.color };
         items.push(it);
         selected = it;
         paintAll();
@@ -616,7 +934,7 @@
 
       if (tool === 'draw') {
         snapshot();
-        const it = { id: uid(), page: pi, type: 'ink', points: [[x0, y0]], color: props.color, width: props.width };
+        const it = { id: newId(), page: pi, type: 'ink', points: [[x0, y0]], color: props.color, width: props.width };
         items.push(it);
         const move = (ev) => { it.points.push(pt(ev)); paintAll(); };
         window.addEventListener('pointermove', move);
@@ -644,7 +962,7 @@
         const w = Math.abs(x - x0), hh = Math.abs(y - y0);
         if (w < 3 || hh < 3) return;
         snapshot();
-        const base = { id: uid(), page: pi, x: Math.min(x, x0), y: Math.min(y, y0), w, h: hh };
+        const base = { id: newId(), page: pi, x: Math.min(x, x0), y: Math.min(y, y0), w, h: hh };
         items.push(tool === 'redact' ? { ...base, type: 'redact' }
           : tool === 'highlight' ? { ...base, type: 'rect', fill: '#ffe066', opacity: 0.4 }
             : { ...base, type: 'rect', fill: '#ffffff', opacity: 1 });
@@ -660,8 +978,11 @@
       saveBtn.replaceChildren(h('span', { class: 'spinner' }), 'Saving…');
       const ops = items.map(({ id, ...op }) => op);
       try {
-        const r = await runTool('edit', [file.id], { ops });
-        const out = r.outputs[0];
+        const [out] = await runTool('edit', [file], { ops });
+        await remember(out, 'result', mode === 'sign' ? 'sign' : 'edit');
+        clearTimeout(draftTimer);
+        await DB.del('drafts', file.key);
+        if (kit.settings.autoDownload) download(out.blob, out.name);
         doneModal(out);
       } catch (e) {
         status.textContent = e.message;
@@ -672,17 +993,18 @@
     function doneModal(out) {
       const back = h('div', { class: 'modal-back' }, h('div', { class: 'modal', role: 'dialog', 'aria-label': 'Saved' },
         h('h2', {}, 'Your PDF is ready'),
-        h('p', { class: 'note' }, 'Redacted areas are removed for good, not just covered.'),
+        h('p', { class: 'note' }, 'Redacted areas are removed for good, not just covered.' + (+kit.settings.keep ? ' It’s in Recent files too.' : '')),
         h('div', { class: 'row' },
           h('button', { class: 'pill-btn', onclick: () => back.remove() }, 'Keep editing'),
-          h('button', { class: 'pill-btn', onclick: () => { handoff = out; back.remove(); location.hash = '#/t/compress'; } }, 'Compress it'),
-          h('a', { class: 'ink-btn', href: fileURL(out), download: out.name }, 'Download'))));
+          h('button', { class: 'pill-btn', onclick: () => { back.remove(); openWith([out], 'compress'); } }, 'Compress it'),
+          h('button', { class: 'ink-btn', onclick: () => download(out.blob, out.name) }, 'Download'))));
       document.body.append(back);
     }
   }
 
-  // Signature: draw it, or type it in a handwriting-style font.
+  // Signature: draw it, or type it in a handwriting-style font. Remembered on this device if you like.
   function signatureModal(onDone) {
+    const saved = savedSignature();
     let mode = 'draw';
     const canvas = h('canvas', { width: 1000, height: 360, 'aria-label': 'Draw your signature here' });
     const ctx = canvas.getContext('2d');
@@ -727,16 +1049,25 @@
       clear();
       if (m === 'type') { typed.focus(); drawTyped(); }
     } }, label)));
+    const place = (d) => { back.remove(); if (d) { if (kit.settings.rememberSignature) kit.store.set('signature', d); onDone(d); } };
     const back = h('div', { class: 'modal-back' }, h('div', { class: 'modal', role: 'dialog', 'aria-label': 'Your signature' },
-      h('h2', {}, 'Your signature'), h('div', { style: { marginTop: '12px' } }, tabs), typed, canvas,
+      h('h2', {}, 'Your signature'),
+      saved ? h('button', { class: 'saved-sig', onclick: () => place(saved), 'aria-label': 'Use your saved signature' },
+        h('img', { src: saved, alt: '' }), h('span', {}, 'Use saved signature')) : null,
+      h('div', { style: { marginTop: '12px' } }, tabs), typed, canvas,
       h('div', { class: 'row' },
         h('button', { class: 'pill-btn', onclick: clear }, 'Clear'),
         h('button', { class: 'pill-btn', onclick: () => back.remove() }, 'Cancel'),
-        h('button', { class: 'ink-btn', onclick: () => { if (!drawn) return; const d = cropped(); back.remove(); d && onDone(d); } }, 'Place signature'))));
+        h('button', { class: 'ink-btn', onclick: () => { if (drawn) place(cropped()); } }, 'Place signature'))));
     document.body.append(back);
   }
 
   // ─── start ────────────────────────────────────────────────────────────
-  fetch('./health').then((r) => r.json()).then((hlth) => { engines = hlth.engines || engines; if (!location.hash || location.hash === '#/') renderHome(); }).catch(() => {});
+  fetch('./health').then((r) => r.json()).then((hlth) => {
+    engines = hlth.engines || engines;
+    maxBytes = hlth.maxBytes || maxBytes;
+    if (isHome()) renderHome();
+  }).catch(() => {});
+  prune();
   route();
 })();
