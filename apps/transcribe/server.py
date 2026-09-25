@@ -2,6 +2,11 @@
 
 Uploads are queued and transcribed one at a time on a background thread,
 so a long recording never blocks a request; the page polls for progress.
+
+Nothing stays here once you have it. A recording is deleted as soon as it
+has been transcribed; the transcript waits only until your browser collects
+it (it keeps transcripts on your device) and is then deleted too. Anything
+never collected is deleted after TRANSCRIBE_KEEP_HOURS.
 Speech recognition uses faster-whisper (local, no API key):
 
     pip install -r apps/transcribe/requirements.txt
@@ -12,6 +17,7 @@ Settings (env vars):
     TRANSCRIBE_DATA     default apps/transcribe/data (uploads, transcripts, jobs.db)
     TRANSCRIBE_MODEL    faster-whisper model size, default "small"
     TRANSCRIBE_MAX_MB   largest upload accepted, default 2048
+    TRANSCRIBE_KEEP_HOURS  delete finished jobs nobody collected, default 168 (a week)
 """
 
 from __future__ import annotations
@@ -35,6 +41,7 @@ PORT = int(os.environ.get("TRANSCRIBE_PORT", "8102"))
 DATA = Path(os.environ.get("TRANSCRIBE_DATA", Path(__file__).with_name("data")))
 MODEL = os.environ.get("TRANSCRIBE_MODEL", "small")
 MAX_BYTES = int(os.environ.get("TRANSCRIBE_MAX_MB", "2048")) * 1024 * 1024
+KEEP_SECONDS = float(os.environ.get("TRANSCRIBE_KEEP_HOURS", "168")) * 3600
 STATIC = Path(__file__).with_name("static")
 LANGUAGES = {"auto", "en", "fr", "es", "de", "pt", "it", "nl", "yo", "ig", "ha", "sw", "ar", "zh", "ja"}
 
@@ -103,7 +110,9 @@ class Jobs:
             db.execute("UPDATE jobs SET status = 'queued', progress = 0 WHERE status = 'running'")
             for (jid,) in db.execute("SELECT id FROM jobs WHERE status = 'queued' ORDER BY created_at"):
                 self.queue.put(jid)
+        self.sweep()
         threading.Thread(target=self._work, daemon=True).start()
+        threading.Thread(target=self._sweeper, daemon=True).start()
 
     @contextmanager
     def _db(self):
@@ -179,6 +188,38 @@ class Jobs:
         (self.data / "transcripts" / f"{jid}.json").unlink(missing_ok=True)
         return True
 
+    def sweep(self, now: float | None = None) -> None:
+        """Delete what nobody needs: finished jobs never collected, and files no job owns."""
+        now = now or time.time()
+        with self._db() as db:
+            stale = [r[0] for r in db.execute("SELECT id FROM jobs WHERE status IN ('done', 'error') AND finished_at < ?",
+                                               (now - KEEP_SECONDS,))]
+        for jid in stale:
+            self.delete(jid)
+        with self._db() as db:
+            waiting = {r[0] for r in db.execute("SELECT file FROM jobs WHERE status IN ('queued', 'running')")}
+            done = {r[0] for r in db.execute("SELECT id FROM jobs WHERE status = 'done'")}
+        # Files touched in the last hour may belong to an upload or job still being written.
+        def old(f: Path) -> bool:
+            try:
+                return f.stat().st_mtime < now - 3600
+            except FileNotFoundError:
+                return False
+        for f in (self.data / "uploads").iterdir():
+            if f.name not in waiting and old(f):
+                f.unlink(missing_ok=True)
+        for f in (self.data / "transcripts").iterdir():
+            if f.stem not in done and old(f):
+                f.unlink(missing_ok=True)
+
+    def _sweeper(self) -> None:
+        while True:
+            time.sleep(3600)
+            try:
+                self.sweep()
+            except OSError:
+                pass
+
     def _work(self) -> None:
         while True:
             jid = self.queue.get()
@@ -219,6 +260,9 @@ class Jobs:
             self._update(jid, status="error", error=str(e), finished_at=time.time())
         except Exception as e:  # a bad file must not stop the worker
             self._update(jid, status="error", error=f"Couldn't transcribe this file: {e}", finished_at=time.time())
+        finally:
+            # The recording isn't needed any more, whatever happened.
+            (self.data / "uploads" / row["file"]).unlink(missing_ok=True)
 
 
 def stamp(t: float, sep: str) -> str:

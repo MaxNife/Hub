@@ -74,6 +74,8 @@
   .stat small { font-size: 12px; color: var(--muted); }
   .find { width: 100%; height: 44px; margin-bottom: 8px; padding: 0 14px; border: 1px solid var(--line); border-radius: 12px; background: var(--surface); font: inherit; font-size: 15px; }
   .drop { margin-top: 20px; }
+  .privacy { display: flex; align-items: center; gap: 10px; margin: 0 0 16px; padding: 12px 16px; border-radius: 14px; background: color-mix(in srgb, var(--live) 10%, var(--surface)); font-size: 14px; }
+  .privacy svg { flex-shrink: 0; width: 20px; height: 20px; color: var(--live); }
   @media (max-width: 640px) { .wrap { padding: 20px 16px 32px; } h1 { font-size: 36px; } }
   @media (prefers-reduced-motion: reduce) { .bar.busy span { animation: none; } }
 </style>
@@ -82,6 +84,8 @@
 <body>
 <div class="wrap">
   <div id="head"></div>
+  <p class="privacy"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 3h10v18H7zM11 18h2"/></svg>
+    Recordings are deleted from the Hub machine once they’re transcribed. Your transcripts are kept on this device.</p>
   <div class="stats" id="stats" hidden></div>
   <div class="notice" id="engine" hidden></div>
   <label class="drop" id="drop" for="file">
@@ -103,6 +107,9 @@
 <script>
 (function () {
   'use strict';
+  // Transcripts live on this device (IndexedDB). The server only holds a
+  // recording while it is transcribed and the transcript until we collect
+  // it here, then both are deleted there.
   var LANGS = [['auto', 'Detect language'], ['en', 'English'], ['fr', 'French'], ['es', 'Spanish'], ['de', 'German'], ['pt', 'Portuguese'],
     ['yo', 'Yoruba'], ['ig', 'Igbo'], ['ha', 'Hausa'], ['sw', 'Swahili']];
   var FORMATS = { txt: 'Text .txt', srt: 'Subtitles .srt', vtt: 'Web subtitles .vtt' };
@@ -116,14 +123,18 @@
       { key: 'format', label: 'Download as', type: 'choice', def: 'txt', choices: [['txt', '.txt'], ['srt', '.srt'], ['vtt', '.vtt']] },
       { key: 'openDone', label: 'Open a transcript when it’s ready', type: 'toggle', def: true },
       { key: 'notify', label: 'Tell me when one finishes', type: 'toggle', def: false, hint: 'A browser notification, if you allow it' },
-      { type: 'heading', label: 'Tidying up' },
-      { key: 'cleanup', label: 'Delete finished recordings after', type: 'choice', def: '0', choices: [['0', 'Never'], ['7', '1 week'], ['30', '1 month']],
-        hint: 'Recordings and transcripts are kept on the Hub machine until then' },
+      { type: 'heading', label: 'On this device' },
+      { key: 'keep', label: 'Keep transcripts', type: 'choice', def: '0', choices: [['0', 'Until I delete them'], ['30', '1 month'], ['7', '1 week']],
+        hint: 'They’re stored in this browser. The Hub machine keeps nothing once they’re here.' },
+      { type: 'action', label: 'All transcripts', button: 'Delete all', danger: true, run: function (k, close) {
+        if (!window.confirm('Delete every transcript from this device?')) return;
+        DB.clear().then(loadLocal); close();
+      } },
     ],
     onChange: function (key, value) {
       if (key === 'language') lang.value = value;
       if (key === 'notify' && value && window.Notification && Notification.permission === 'default') Notification.requestPermission();
-      if (key === 'cleanup') tidy(cache.list || []);
+      if (key === 'keep') loadLocal();
       render();
     },
   });
@@ -135,18 +146,77 @@
   var find = document.getElementById('find');
   LANGS.forEach(function (l) { var o = document.createElement('option'); o.value = l[0]; o.textContent = l[1]; lang.appendChild(o); });
   lang.value = kit.settings.language;
-  var open = {};        // job ids with the transcript expanded
+  var open = {};        // transcript ids expanded
   var uploads = {};     // temporary rows while a file uploads
+  var server = [];      // jobs still on the server: queued, running, failed
+  var local = [];       // transcripts on this device, newest first
+  var collecting = {};  // ids being brought over
+  var watched = {};     // jobs this page saw in progress, so we can say when they finish
   var timer = null;
-  var cache = {};
-  var texts = {};       // transcript text by job id, for search
-  var wasBusy = {};     // jobs that were running last time we looked
   var engineMissing = false;
   lang.addEventListener('mousedown', function (e) { e.stopPropagation(); });
   lang.addEventListener('click', function (e) { e.stopPropagation(); });
   lang.addEventListener('change', function () { kit.set('language', lang.value); });
   find.addEventListener('input', function () { render(); });
-    function esc(s) { var d = document.createElement('div'); d.textContent = s == null ? '' : String(s); return d.innerHTML; }
+
+  // ─── IndexedDB ────────────────────────────────────────────────────────
+  var DB = (function () {
+    var dbp = null;
+    function open() {
+      if (!dbp) dbp = new Promise(function (resolve, reject) {
+        var r = indexedDB.open('transcribe', 1);
+        r.onupgradeneeded = function () { r.result.createObjectStore('transcripts', { keyPath: 'id' }); };
+        r.onsuccess = function () { resolve(r.result); };
+        r.onerror = function () { reject(r.error); };
+      });
+      return dbp;
+    }
+    function tx(mode, fn) {
+      return open().then(function (db) {
+        return new Promise(function (resolve, reject) {
+          var t = db.transaction('transcripts', mode), req = fn(t.objectStore('transcripts'));
+          t.oncomplete = function () { resolve(req ? req.result : undefined); };
+          t.onerror = t.onabort = function () { reject(t.error); };
+        });
+      });
+    }
+    return {
+      all: function () { return tx('readonly', function (s) { return s.getAll(); }); },
+      put: function (v) { return tx('readwrite', function (s) { return s.put(v); }); },
+      del: function (id) { return tx('readwrite', function (s) { return s.delete(id); }); },
+      clear: function () { return tx('readwrite', function (s) { return s.clear(); }); },
+    };
+  })();
+  function loadLocal() {
+    return DB.all().then(function (all) {
+      var days = +kit.settings.keep;
+      local = all.filter(function (t) {
+        var old = days && Date.now() - t.saved > days * 864e5;
+        if (old) DB.del(t.id);
+        return !old;
+      }).sort(function (a, b) { return b.saved - a.saved; });
+      render();
+    }).catch(function () { local = []; render(); });
+  }
+  // Bring a finished transcript to this device, then delete it from the server.
+  function collect(j) {
+    if (collecting[j.id]) return;
+    collecting[j.id] = true;
+    fetch('./api/jobs/' + j.id).then(function (r) { if (!r.ok) throw new Error(); return r.json(); }).then(function (full) {
+      var t = { id: full.id, name: full.name, size: full.size, language: full.language, detected: full.detected,
+        duration: full.duration, segments: full.segments || [], text: full.text || '', created: full.created_at * 1000, saved: Date.now() };
+      return DB.put(t).then(function () { return fetch('./api/jobs/' + j.id, { method: 'DELETE' }); }).then(function () {
+        if (watched[j.id]) {
+          if (kit.settings.openDone) open[j.id] = true;
+          if (kit.settings.notify && window.Notification && Notification.permission === 'granted') new Notification('Transcript ready', { body: j.name });
+          else kit.toast(j.name + ' is ready');
+        }
+        return loadLocal();
+      });
+    }).catch(function () { /* try again next time */ }).then(function () { delete collecting[j.id]; });
+  }
+
+  function esc(s) { var d = document.createElement('div'); d.textContent = s == null ? '' : String(s); return d.innerHTML; }
   function size(n) { return n > 1e9 ? (n / 1e9).toFixed(1) + ' GB' : n > 1e6 ? (n / 1e6).toFixed(1) + ' MB' : Math.max(1, Math.round(n / 1e3)) + ' KB'; }
   function mins(s) { var m = Math.floor(s / 60), r = Math.round(s % 60); return m ? m + ' min ' + (r ? r + ' s' : '') : r + ' s'; }
 
@@ -162,11 +232,13 @@
       if (xhr.status !== 201) {
         var msg = 'Upload failed';
         try { msg = JSON.parse(xhr.responseText).error || msg; } catch (e) {}
-        alert(msg);
+        kit.toast(msg);
+      } else {
+        try { watched[JSON.parse(xhr.responseText).id] = true; } catch (e) {}
       }
       refresh();
     };
-    xhr.onerror = function () { delete uploads[key]; alert('Upload failed. Is Transcribe still running?'); render(); };
+    xhr.onerror = function () { delete uploads[key]; kit.toast('Upload failed. Is Transcribe still running?'); render(); };
     xhr.send(file);
   }
 
@@ -188,34 +260,49 @@
       var eta = j.progress > 0.03 ? el / j.progress - el : null;
       return pct + '% of ' + mins(j.duration) + (eta ? ' · about ' + mins(Math.max(1, eta)) + ' left' : '');
     }
-    if (j.status === 'done') return 'Done' + (j.duration ? ' · ' + mins(j.duration) : '') + (j.detected ? ' · ' + j.detected.toUpperCase() : '');
+    if (j.status === 'done') return 'Bringing it to this device…';
     return j.error || 'Failed';
   }
 
-  function downloads(id) {
+  // Downloads are made here from the saved transcript; nothing is fetched.
+  function stamp(t, sep) {
+    var ms = Math.round(t * 1000), h = Math.floor(ms / 3600000), m = Math.floor(ms / 60000) % 60, s = Math.floor(ms / 1000) % 60;
+    var p = function (n, w) { return String(n).padStart(w || 2, '0'); };
+    return p(h) + ':' + p(m) + ':' + p(s) + sep + p(ms % 1000, 3);
+  }
+  function asFormat(t, f) {
+    if (f === 'srt') return t.segments.map(function (s, i) { return (i + 1) + '\n' + stamp(s.start, ',') + ' --> ' + stamp(s.end, ',') + '\n' + s.text + '\n'; }).join('\n');
+    if (f === 'vtt') return 'WEBVTT\n\n' + t.segments.map(function (s) { return stamp(s.start, '.') + ' --> ' + stamp(s.end, '.') + '\n' + s.text + '\n'; }).join('\n');
+    return t.text + '\n';
+  }
+  function save(t, f) {
+    var a = document.createElement('a');
+    a.href = URL.createObjectURL(new Blob([asFormat(t, f)], { type: 'text/plain;charset=utf-8' }));
+    a.download = (t.name.replace(/\.[^.]+$/, '') || 'transcript') + '.' + f;
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(function () { URL.revokeObjectURL(a.href); }, 30000);
+  }
+  function downloads() {
     var first = kit.settings.format;
     return [first].concat(Object.keys(FORMATS).filter(function (f) { return f !== first; })).map(function (f, i) {
-      return '<a class="pill" style="display:inline-flex;align-items:center;text-decoration:none;color:inherit' + (i === 0 ? ';background:var(--ink);color:var(--paper);border-color:var(--ink)' : '') +
-        '" href="./api/jobs/' + id + '/transcript.' + f + '">' + (i === 0 ? 'Download ' : '') + FORMATS[f] + '</a>';
+      return '<button class="pill" data-act="dl" data-f="' + f + '"' + (i === 0 ? ' style="background:var(--ink);color:var(--paper);border-color:var(--ink)"' : '') + '>' +
+        (i === 0 ? 'Download ' : '') + FORMATS[f] + '</button>';
     }).join('');
   }
-  function stats(list) {
-    var done = list.filter(function (j) { return j.status === 'done'; });
-    var secs = done.reduce(function (a, j) { return a + (j.duration || 0); }, 0);
+  function stats() {
+    var secs = local.reduce(function (a, t) { return a + (t.duration || 0); }, 0);
+    var busy = server.filter(function (j) { return j.status === 'queued' || j.status === 'running'; }).length;
     var box = document.getElementById('stats');
-    box.hidden = !list.length;
+    box.hidden = !local.length && !busy;
     var hours = secs >= 3600 ? (secs / 3600).toFixed(1) + ' hr' : Math.round(secs / 60) + ' min';
-    box.innerHTML = '<div class="stat"><b>' + done.length + '</b><small>Transcribed</small></div>' +
+    box.innerHTML = '<div class="stat"><b>' + local.length + '</b><small>Transcripts</small></div>' +
       '<div class="stat"><b>' + hours + '</b><small>Of audio</small></div>' +
-      '<div class="stat"><b>' + list.filter(function (j) { return j.status === 'queued' || j.status === 'running'; }).length + '</b><small>In progress</small></div>';
+      '<div class="stat"><b>' + busy + '</b><small>In progress</small></div>';
   }
-  function render(list) {
-    if (list) cache.list = list;
-    list = cache.list || [];
-    stats(list);
-    find.hidden = list.length < 4;
+  function render() {
+    stats();
+    find.hidden = local.length < 4;
     var q = find.value.trim().toLowerCase();
-    if (q) list = list.filter(function (j) { return j.name.toLowerCase().indexOf(q) >= 0 || (texts[j.id] || '').toLowerCase().indexOf(q) >= 0; });
     var html = '';
     Object.keys(uploads).forEach(function (k) {
       var u = uploads[k];
@@ -223,16 +310,22 @@
         '<div class="meta">Uploading ' + Math.round(u.sent * 100) + '% of ' + size(u.size) + '</div>' +
         '<div class="bar"><span style="width:' + (u.sent * 100) + '%"></span></div></div>';
     });
-    list.forEach(function (j) {
+    server.forEach(function (j) {
       var running = j.status === 'running' || j.status === 'queued';
-      html += '<div class="job" data-id="' + j.id + '"><div class="top"><span class="name">' + esc(j.name) + '</span>' +
-        (j.status === 'done' ? '<button class="pill" data-act="toggle">' + (open[j.id] ? 'Hide' : 'Read') + '</button>' : '') +
-        '<button class="x" data-act="delete" aria-label="' + (running ? 'Cancel ' : 'Delete ') + esc(j.name) + '">×</button></div>' +
+      html += '<div class="job" data-id="' + j.id + '" data-where="server"><div class="top"><span class="name">' + esc(j.name) + '</span>' +
+        '<button class="x" data-act="cancel" aria-label="' + (running ? 'Cancel ' : 'Dismiss ') + esc(j.name) + '">×</button></div>' +
         '<div class="meta' + (j.status === 'error' ? ' err' : '') + '">' + esc(status(j)) + ' · ' + size(j.size) + '</div>' +
         (running ? '<div class="bar' + (j.status === 'queued' || !j.duration ? ' busy' : '') + '"><span style="width:' + (j.progress * 100) + '%"></span></div>' : '') +
-        (open[j.id] && open[j.id].text != null ? '<div class="text">' + esc(open[j.id].text || '(No speech found)') + '</div>' +
-          '<div class="actions"><button class="pill" data-act="copy">Copy text</button>' +
-          downloads(j.id) + '</div>' : '') +
+        '</div>';
+    });
+    var shown = q ? local.filter(function (t) { return t.name.toLowerCase().indexOf(q) >= 0 || t.text.toLowerCase().indexOf(q) >= 0; }) : local;
+    shown.forEach(function (t) {
+      html += '<div class="job" data-id="' + t.id + '"><div class="top"><span class="name">' + esc(t.name) + '</span>' +
+        '<button class="pill" data-act="toggle">' + (open[t.id] ? 'Hide' : 'Read') + '</button>' +
+        '<button class="x" data-act="delete" aria-label="Delete ' + esc(t.name) + '">×</button></div>' +
+        '<div class="meta">' + [t.duration ? mins(t.duration) : null, t.detected ? t.detected.toUpperCase() : null, kit.ago(t.saved)].filter(Boolean).join(' · ') + '</div>' +
+        (open[t.id] ? '<div class="text">' + esc(t.text || '(No speech found)') + '</div>' +
+          '<div class="actions"><button class="pill" data-act="copy">Copy text</button>' + downloads() + '</div>' : '') +
         '</div>';
     });
     jobsEl.innerHTML = html || (q ? '<p class="empty">Nothing matches “' + esc(q) + '”.</p>' : '<p class="ak-empty">Nothing yet. Drop a recording above to start.</p>');
@@ -242,14 +335,16 @@
     var b = e.target.closest('[data-act]');
     if (!b) return;
     var id = b.closest('.job').dataset.id;
+    var t = local.filter(function (x) { return x.id === id; })[0];
     var act = b.dataset.act;
-    if (act === 'toggle') {
-      if (open[id]) { delete open[id]; render(); return; }
-      open[id] = {};
-      fetch('./api/jobs/' + id).then(function (r) { return r.json(); }).then(function (j) { open[id] = { text: j.text }; texts[id] = j.text || ''; render(); });
-    } else if (act === 'copy') {
-      navigator.clipboard.writeText(open[id].text || '').then(function () { b.textContent = 'Copied'; setTimeout(function () { b.textContent = 'Copy text'; }, 1500); });
-    } else if (act === 'delete') {
+    if (act === 'toggle') { open[id] = !open[id]; render(); }
+    else if (act === 'copy') {
+      navigator.clipboard.writeText(t.text || '').then(function () { b.textContent = 'Copied'; setTimeout(function () { b.textContent = 'Copy text'; }, 1500); });
+    } else if (act === 'dl') save(t, b.dataset.f);
+    else if (act === 'delete') {
+      if (!window.confirm('Delete “' + t.name + '” from this device?')) return;
+      DB.del(id).then(loadLocal);
+    } else if (act === 'cancel') {
       fetch('./api/jobs/' + id, { method: 'DELETE' }).then(refresh);
     }
   });
@@ -257,47 +352,17 @@
   function refresh() {
     clearTimeout(timer);
     fetch('./api/jobs').then(function (r) { return r.json(); }).then(function (list) {
-      finished(list);
-      list = tidy(list);
-      render(list);
+      list.forEach(function (j) {
+        if (j.status === 'queued' || j.status === 'running') watched[j.id] = true;
+        if (j.status === 'done') collect(j);
+      });
+      server = list.filter(function (j) { return j.status !== 'done' || collecting[j.id]; });
+      render();
       var busy = list.some(function (j) { return j.status === 'queued' || j.status === 'running'; });
       timer = setTimeout(refresh, busy || Object.keys(uploads).length ? 1500 : 10000);
     }).catch(function () { timer = setTimeout(refresh, 5000); });
   }
 
-  // A job that just finished: open it, and say so if you asked.
-  function finished(list) {
-    list.forEach(function (j) {
-      var busy = j.status === 'queued' || j.status === 'running';
-      if (wasBusy[j.id] && j.status === 'done') {
-        if (kit.settings.openDone && !open[j.id]) {
-          open[j.id] = {};
-          fetch('./api/jobs/' + j.id).then(function (r) { return r.json(); }).then(function (full) { open[j.id] = { text: full.text }; texts[j.id] = full.text || ''; render(); });
-        }
-        if (kit.settings.notify && window.Notification && Notification.permission === 'granted') new Notification('Transcript ready', { body: j.name });
-        else kit.toast(j.name + ' is ready');
-      }
-      wasBusy[j.id] = busy;
-    });
-  }
-  // Delete finished recordings older than the setting.
-  function tidy(list) {
-    var days = +kit.settings.cleanup;
-    if (!days) return list;
-    return list.filter(function (j) {
-      var old = j.status !== 'queued' && j.status !== 'running' && j.finished_at && Date.now() / 1000 - j.finished_at > days * 86400;
-      if (old) fetch('./api/jobs/' + j.id, { method: 'DELETE' });
-      return !old;
-    });
-  }
-  // Fill search with transcripts in the background.
-  function loadTexts(list) {
-    list.filter(function (j) { return j.status === 'done' && texts[j.id] == null; }).slice(0, 30).forEach(function (j) {
-      texts[j.id] = '';
-      fetch('./api/jobs/' + j.id).then(function (r) { return r.json(); }).then(function (full) { texts[j.id] = full.text || ''; });
-    });
-  }
-  find.addEventListener('focus', function () { loadTexts(cache.list || []); });
   fetch('./health').then(function (r) { return r.json(); }).then(function (h) {
     if (h.engine === 'missing') {
       engineMissing = true;
@@ -307,7 +372,7 @@
       n.innerHTML = 'The speech engine isn’t installed yet. On the Hub machine run <code>pip install -r apps/transcribe/requirements.txt</code>, then restart Transcribe. Uploads will wait in the queue.';
     }
   }).catch(function () {});
-  refresh();
+  loadLocal().then(refresh);
 })();
 </script>
 </body>
