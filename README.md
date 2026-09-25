@@ -20,8 +20,8 @@ with a `hub.json` into `apps/` and it shows up. See
 - `web/` — React + TS frontend (embedded in the binary)
 - `apps/` — the apps: Converter, Meal picker, Memory, Reaction, Puzzle,
   Random, Name generator (static); Football, Transcribe, Documents (service)
-- `appkit/` — theme snippet for static apps, and the game kit (home
-  screen, settings, sound) the games share
+- `appkit/` — theme snippet, the app kit (home header, settings sheet,
+  storage) every app uses, and the game kit games add on top
 - `data/` — `hub.db`, logs, backups (git-ignored)
 
 ## Prerequisites
@@ -91,7 +91,7 @@ your tailnet. To serve HTTPS directly instead, set `HUB_TLS_CERT` and
 go test ./...                                   # server packages
 python -m unittest apps/football/test_server.py apps/transcribe/test_server.py
 python -m unittest discover apps/documents
-python appkit/sync.py --check    # games carry the current game kit
+python appkit/sync.py --check    # apps carry the current app/game kit
 node e2e.cjs     # hub must be running on :8080 from the repo root, no password set
 cd web; npm.cmd run lint; npx tsc -b
 ```

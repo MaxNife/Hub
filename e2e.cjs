@@ -162,13 +162,18 @@ await t('all static apps serve', async () => {
   }
 });
 
-await t('games load the shared game kit', async () => {
-  for (const id of ['memory', 'reaction', 'puzzle']) {
+await t('every app has the app kit; games add the game kit', async () => {
+  const appKit = fs.readFileSync('appkit/app-kit.js', 'utf8');
+  for (const id of ['converter', 'meal-picker', 'random', 'names', 'memory', 'reaction', 'puzzle']) {
     const page = (await req('GET', `/apps/${id}/`)).text;
-    assert.ok(page.includes('./game-kit.js') && page.includes('GameKit.create'), id + ' uses the kit');
+    assert.ok(page.includes('./app-kit.js') && page.includes('AppKit.create') || page.includes('GameKit.create'), id + ' builds a home screen with the kit');
+    const kit = await req('GET', `/apps/${id}/app-kit.js`);
+    assert.strictEqual(kit.status, 200, id + ' serves app-kit.js');
+    assert.strictEqual(kit.text, appKit, id + ' kit is in sync (python appkit/sync.py)');
+  }
+  for (const id of ['memory', 'reaction', 'puzzle']) {
     const kit = await req('GET', `/apps/${id}/game-kit.js`);
-    assert.strictEqual(kit.status, 200, id + ' serves game-kit.js');
-    assert.strictEqual(kit.text, fs.readFileSync('appkit/game-kit.js', 'utf8'), id + ' kit is in sync (python appkit/sync.py)');
+    assert.strictEqual(kit.text, fs.readFileSync('appkit/game-kit.js', 'utf8'), id + ' game kit is in sync');
   }
 });
 

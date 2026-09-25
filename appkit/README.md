@@ -13,18 +13,37 @@ their `<head>`. It:
 App rules still apply: relative URLs only, and prefix `localStorage` keys
 with the app id.
 
+## App kit
+
+A widget on Hub's Home only has settings. An app or game needs its own
+home screen and settings, as it would if it were installed on its own.
+`app-kit.js` and `app-kit.css` give every app the same building blocks:
+
+- `kit.header({ tagline })`: greeting ("Good evening · welcome back"),
+  the app's title and a Settings button;
+- a Settings sheet built from `fields` (heading, toggle, choice, select,
+  range, text, action, custom), saved in `<id>:settings` (or
+  `settingsKey`, for an app whose widget already uses that key);
+- `kit.store` for namespaced storage, `kit.toast()`, `kit.modal()`,
+  `kit.ago()`, and home-screen styles (`.ak-section`, `.ak-chip`,
+  `.ak-empty`).
+
 ## Game kit
 
+Built on the app kit: games load `app-kit.js`, then `game-kit.js`.
 `game-kit.js` and `game-kit.css` give every game the same home screen:
 Continue (when a game is saved), difficulty, New game, stats, Settings
 (sound effects, music, volume, the game's own options, reset stats) and
 How to play. Sound and music are synthesised with Web Audio, so there is
 nothing to download. A game calls `GameKit.create({...})` with its
 difficulties, options, `stats()`, `saved()`, `onNew`, `onContinue` and
-`onPause`, and puts `kit.menuButton()` in its top bar. Settings live in
-`<id>:settings`. Hub can open a game at `#continue` or `#new`.
+`onPause`, and puts `kit.menuButton()` in its top bar. Hub can open a
+game at `#continue` or `#new`.
 
-Games load their own copy, so after editing run:
+## Keeping copies in sync
 
-    python appkit/sync.py          # copy into every game that uses it
+Apps load their own copy of each kit file their `index.html` references,
+so after editing anything here run:
+
+    python appkit/sync.py          # copy into every app that uses it
     python appkit/sync.py --check  # exit 1 if a copy is stale

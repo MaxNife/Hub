@@ -16,6 +16,10 @@ prefix `localStorage` keys with the app id. Service apps bind to
 `127.0.0.1`, answer `GET /health`, and keep their own data in
 `apps/<id>/data/` (git-ignored).
 
-Games (memory, reaction, puzzle) load `game-kit.js` and `game-kit.css`
-from their own `dist/`. Edit the copies in `appkit/`, then run
-`python appkit/sync.py`.
+Every app and game opens on its own home screen with its own settings,
+built with `appkit/app-kit.js` (games add `game-kit.js`). Widgets on Hub's
+Home only have settings. Edit the kit in `appkit/`, then run
+`python appkit/sync.py` to update each app's copy.
+
+Documents keeps files on the user's device: its server is stateless and
+never stores uploads or results.

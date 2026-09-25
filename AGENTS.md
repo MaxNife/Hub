@@ -3,6 +3,18 @@
 Project overview and run instructions: `README.md`. Build progress and
 environment gotchas: `memory.md`.
 
+## Apps, games and widgets
+
+- A widget (a row on Hub's Home, like the football carousel) only has
+  settings, and those live in Hub.
+- An app or game is different: it needs its own personalized home
+  screen and its own settings, as it would if it were installed on its
+  own. Build them with `appkit/app-kit.js` (games add
+  `appkit/game-kit.js`), then run `python appkit/sync.py`.
+- An app's settings are separate from its widget's settings.
+- Documents keeps files on the user's device only. Its server must stay
+  stateless: never write uploads or results to the server.
+
 ## Commits
 
 - Follow the 50/72 rule: subject line at most 50 characters, a blank
