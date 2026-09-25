@@ -46,6 +46,7 @@
   .seg button.active, .seg button[aria-pressed="true"] { background: var(--ink); color: var(--paper); }
   @media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation-duration: .01ms !important; transition-duration: .01ms !important; } }
 </style>
+<link rel="stylesheet" href="./app-kit.css">
 <link rel="stylesheet" href="./game-kit.css">
 <style>
   html, body { height: 100%; }
@@ -90,6 +91,7 @@
   <button class="pad" id="pad" type="button" aria-live="assertive"><b id="big">Tap to start</b><span id="small">Or press Space</span></button>
   <div class="history" id="history" aria-label="This round"></div>
 </div>
+<script src="./app-kit.js"></script>
 <script src="./game-kit.js"></script>
 <script>
 (function () {
