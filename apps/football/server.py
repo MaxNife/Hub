@@ -14,15 +14,17 @@ Settings (env vars):
 
 from __future__ import annotations
 
+import gzip
+import http.client
 import json
 import mimetypes
 import os
+import ssl
 import sys
 import threading
 import time
-import urllib.error
+from concurrent.futures import ThreadPoolExecutor
 import urllib.parse
-import urllib.request
 from datetime import datetime, timedelta, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -51,39 +53,129 @@ class UpstreamError(Exception):
 
 
 class Cache:
-    """Tiny TTL cache so Hub's refreshes don't hammer the data source."""
+    """Tiny TTL cache so Hub's refreshes don't hammer the data source.
+
+    An expired entry is still served for up to STALE × its TTL while a
+    background refresh fetches the new one, so pages never wait on ESPN
+    for data they've already seen."""
+
+    STALE = 10
 
     def __init__(self) -> None:
         self._lock = threading.Lock()
-        self._items: dict[str, tuple[float, object]] = {}
+        self._items: dict[str, tuple[float, float, object]] = {}
 
-    def get(self, key: str):
+    def lookup(self, key: str) -> tuple[bool, object]:
+        """(fresh, value); value is None when missing or too old to serve."""
         with self._lock:
             item = self._items.get(key)
-            if item and item[0] > time.monotonic():
-                return item[1]
-        return None
+        if not item:
+            return False, None
+        expires, ttl, value = item
+        now = time.monotonic()
+        if now < expires:
+            return True, value
+        return False, value if now < expires + ttl * (self.STALE - 1) else None
 
     def put(self, key: str, value: object, ttl: float) -> None:
         with self._lock:
-            self._items[key] = (time.monotonic() + ttl, value)
+            self._items[key] = (time.monotonic() + ttl, ttl, value)
 
 
 cache = Cache()
 
+# Python's TLS handshake with ESPN takes seconds here, so connections are
+# kept alive and reused rather than opened per request.
+_ssl = ssl.create_default_context()
+_pool: dict[tuple[str, str], list[http.client.HTTPConnection]] = {}
+_pool_lock = threading.Lock()
+# ESPN answers urllib's User-Agent but refuses others (403).
+_HEADERS = {
+    "User-Agent": f"Python-urllib/{sys.version_info[0]}.{sys.version_info[1]}",
+    "Accept-Encoding": "gzip",
+}
+
+
+def _get(url: str) -> bytes:
+    parts = urllib.parse.urlsplit(url)
+    key = (parts.scheme, parts.netloc)
+    path = parts.path + ("?" + parts.query if parts.query else "")
+    for attempt in (0, 1):
+        with _pool_lock:
+            idle = _pool.setdefault(key, [])
+            conn = idle.pop() if idle else None
+        reused = conn is not None
+        if conn is None:
+            if parts.scheme == "https":
+                conn = http.client.HTTPSConnection(parts.netloc, timeout=10, context=_ssl)
+            else:
+                conn = http.client.HTTPConnection(parts.netloc, timeout=10)
+        try:
+            conn.request("GET", path, headers=_HEADERS)
+            resp = conn.getresponse()
+            body = resp.read()
+        except (OSError, http.client.HTTPException) as e:
+            conn.close()
+            if reused and attempt == 0:
+                continue  # the idle connection was dropped; try a fresh one
+            raise UpstreamError(f"football data unavailable: {e}") from e
+        if resp.will_close:
+            conn.close()
+        else:
+            with _pool_lock:
+                if len(_pool[key]) < 16:
+                    _pool[key].append(conn)
+                else:
+                    conn.close()
+        if resp.status != 200:
+            raise UpstreamError(f"football data unavailable: HTTP {resp.status}")
+        if resp.getheader("Content-Encoding") == "gzip":
+            body = gzip.decompress(body)
+        return body
+    raise AssertionError("unreachable")
+
+
+_loading: dict[str, threading.Lock] = {}
+_loading_lock = threading.Lock()
+
+
+def _load(url: str, ttl: float) -> dict:
+    """Fetch url into the cache; concurrent callers share one request."""
+    with _loading_lock:
+        lock = _loading.setdefault(url, threading.Lock())
+    with lock:
+        fresh, value = cache.lookup(url)
+        if fresh:
+            return value  # type: ignore[return-value]
+        try:
+            data = json.loads(_get(url))
+        except ValueError as e:
+            raise UpstreamError(f"football data unavailable: {e}") from e
+        cache.put(url, data, ttl)
+        return data
+
+
+def _refresh(url: str, ttl: float) -> None:
+    with _loading_lock:
+        busy = url in _loading and _loading[url].locked()
+    if busy:
+        return
+
+    def run() -> None:
+        try:
+            _load(url, ttl)
+        except UpstreamError:
+            pass  # keep serving the stale copy; the next request retries
+    threading.Thread(target=run, daemon=True).start()
+
 
 def fetch_json(url: str, ttl: float) -> dict:
-    hit = cache.get(url)
-    if hit is not None:
-        return hit  # type: ignore[return-value]
-    req = urllib.request.Request(url, headers={"User-Agent": "Hub-Football/1.0"})
-    try:
-        with urllib.request.urlopen(req, timeout=10) as resp:
-            data = json.load(resp)
-    except (urllib.error.URLError, TimeoutError, json.JSONDecodeError) as e:
-        raise UpstreamError(f"football data unavailable: {e}") from e
-    cache.put(url, data, ttl)
-    return data
+    fresh, value = cache.lookup(url)
+    if value is not None:
+        if not fresh:
+            _refresh(url, ttl)
+        return value  # type: ignore[return-value]
+    return _load(url, ttl)
 
 
 def _club(team: dict) -> dict:
@@ -126,20 +218,94 @@ def normalize(ev: dict, league_id: str) -> dict | None:
     }
 
 
-def scoreboard(league_id: str, start: datetime, end: datetime) -> list[dict]:
-    code = LEAGUES[league_id][0]
-    q = urllib.parse.urlencode({"dates": f"{start:%Y%m%d}-{end:%Y%m%d}", "limit": "300"})
-    url = f"{ESPN}/apis/site/v2/sports/soccer/{code}/scoreboard?{q}"
-    # Anything spanning today refreshes every minute; other ranges rarely change.
-    today = datetime.now(timezone.utc).date()
-    ttl = 60 if start.date() <= today <= end.date() else 900
-    data = fetch_json(url, ttl)
-    out = []
-    for ev in data.get("events", []):
-        m = normalize(ev, league_id)
-        if m:
-            out.append(m)
+def _months(start: datetime, end: datetime) -> list[tuple[int, int]]:
+    y, m, out = start.year, start.month, []
+    while (y, m) <= (end.year, end.month):
+        out.append((y, m))
+        y, m = (y + 1, 1) if m == 12 else (y, m + 1)
     return out
+
+
+def scoreboard(league_id: str, start: datetime, end: datetime) -> list[dict]:
+    """Matches kicking off between start and end (UTC days, inclusive).
+
+    ESPN refuses day ranges but takes whole months, so fetch each month
+    the range touches and keep the days asked for."""
+    code = LEAGUES[league_id][0]
+    today = datetime.now(timezone.utc)
+    first, last = start.date(), end.date()
+    out, seen = [], set()
+    for y, mo in _months(start, end):
+        q = urllib.parse.urlencode({"dates": f"{y:04d}{mo:02d}", "limit": "300"})
+        # This month refreshes every minute; other months rarely change.
+        ttl = 60 if (y, mo) == (today.year, today.month) else 900
+        data = fetch_json(f"{ESPN}/apis/site/v2/sports/soccer/{code}/scoreboard?{q}", ttl)
+        for ev in data.get("events", []):
+            m = normalize(ev, league_id)
+            if m and m["id"] not in seen and first <= _parse_time(m["kickoff"]).date() <= last:
+                seen.add(m["id"])
+                out.append(m)
+    return out
+
+
+def scan(league_ids: list[str], start: datetime, end: datetime) -> tuple[list[dict], list[str]]:
+    """Scoreboards for several leagues at once, with any errors."""
+    def one(lid: str):
+        try:
+            return scoreboard(lid, start, end), None
+        except UpstreamError as e:
+            return [], str(e)
+    matches, errors = [], []
+    with ThreadPoolExecutor(max_workers=max(1, len(league_ids))) as pool:
+        for ms, err in pool.map(one, league_ids):
+            matches.extend(ms)
+            if err:
+                errors.append(err)
+    return matches, errors
+
+
+def teams(query: str, limit: int = 10) -> list[dict]:
+    """Clubs in the supported leagues whose name or code matches query,
+    so the settings save exactly the names the scoreboard uses."""
+    def one(lid: str):
+        code = LEAGUES[lid][0]
+        try:
+            data = fetch_json(f"{ESPN}/apis/site/v2/sports/soccer/{code}/teams", 86400)
+        except UpstreamError:
+            return lid, []
+        found = []
+        for sport in data.get("sports", []):
+            for league in sport.get("leagues", []):
+                found += [t.get("team") or {} for t in league.get("teams", [])]
+        return lid, found
+    q = query.strip().lower()
+    if not q:
+        return []
+    with ThreadPoolExecutor(max_workers=len(LEAGUES)) as pool:
+        results = list(pool.map(one, LEAGUES))
+    if not any(found for _, found in results):
+        raise UpstreamError("club list unavailable")
+    ranked, seen = [], set()
+    for lid, found in results:
+        for t in found:
+            c = _club(t)
+            key = c["fullName"] or c["name"]
+            if key in seen:
+                continue
+            words = " ".join((c["name"], c["fullName"])).lower()
+            if c["code"].lower() == q or words.startswith(q):
+                rank = 0
+            elif any(w.startswith(q) for w in words.split()):
+                rank = 1
+            elif q in words:
+                rank = 2
+            else:
+                continue
+            seen.add(key)
+            # The FA Cup lists 100+ lower-league sides; top-flight clubs first.
+            ranked.append((rank, lid == "fa", c["name"].lower(), {**c, "league": LEAGUES[lid][1]}))
+    ranked.sort(key=lambda r: r[:3])
+    return [r[3] for r in ranked[:limit]]
 
 
 def standings(league_id: str) -> list[dict]:
@@ -181,7 +347,7 @@ def feed(leagues: list[str], clubs: list[str], idle: str, window: int, count: in
     wanted = [l for l in leagues if l in LEAGUES]
     club_names = {c.strip().lower() for c in clubs if c.strip()}
     # Followed clubs can play in any league, so look everywhere for them.
-    scan = list(LEAGUES) if club_names else wanted
+    leagues_to_scan = list(LEAGUES) if club_names else wanted
     start, end = now - timedelta(days=PAST_DAYS), now + timedelta(days=AHEAD_DAYS)
 
     def is_club(m: dict) -> bool:
@@ -191,16 +357,13 @@ def feed(leagues: list[str], clubs: list[str], idle: str, window: int, count: in
                 return True
         return False
 
-    matches, errors = [], []
-    for lid in scan:
-        try:
-            for m in scoreboard(lid, start, end):
-                club = is_club(m)
-                if club or lid in wanted:
-                    m["club"] = club
-                    matches.append(m)
-        except UpstreamError as e:
-            errors.append(str(e))
+    found, errors = scan(leagues_to_scan, start, end)
+    matches = []
+    for m in found:
+        club = is_club(m)
+        if club or m["leagueId"] in wanted:
+            m["club"] = club
+            matches.append(m)
     if errors and not matches:
         raise UpstreamError(errors[0])
 
@@ -245,15 +408,12 @@ def clubs_summary(clubs: list[str], now: datetime | None = None) -> dict:
     now = now or datetime.now(timezone.utc)
     names = [c.strip() for c in clubs if c.strip()]
     start, end = now - timedelta(days=PAST_DAYS), now + timedelta(days=AHEAD_DAYS)
-    matches, errors, seen = [], [], set()
-    for lid in LEAGUES if names else []:
-        try:
-            for m in scoreboard(lid, start, end):
-                if m["id"] not in seen:
-                    seen.add(m["id"])
-                    matches.append(m)
-        except UpstreamError as e:
-            errors.append(str(e))
+    found, errors = scan(list(LEAGUES) if names else [], start, end)
+    matches, seen = [], set()
+    for m in found:
+        if m["id"] not in seen:
+            seen.add(m["id"])
+            matches.append(m)
     if errors and not matches:
         raise UpstreamError(errors[0])
     matches.sort(key=lambda m: _parse_time(m["kickoff"]))
@@ -271,6 +431,113 @@ def clubs_summary(clubs: list[str], now: datetime | None = None) -> dict:
             "next": next((m for m in mine if m["state"] == "pre"), None),
         })
     return {"clubs": out}
+
+
+def _minute(clock: dict, added: dict) -> str:
+    """6' normally, 45'+2' in stoppage time."""
+    m = (clock or {}).get("displayValue") or ""
+    a = (added or {}).get("displayValue") or ""
+    if a and a not in m and "+" not in m:
+        base = m.rstrip("′'")
+        a = a.lstrip("+").rstrip("′'")
+        m = f"{base}'+{a}'" if base else f"+{a}'"
+    return m
+
+
+def match_detail(league_id: str, event_id: str) -> dict:
+    """Full info for one match: score, goals/cards/subs, venue, referee.
+
+    ESPN's summary endpoint carries key events (with a sentence each),
+    the venue, attendance and officials, so this is everything the
+    match page needs in one call."""
+    code = LEAGUES[league_id][0]
+    data = fetch_json(f"{ESPN}/apis/site/v2/sports/soccer/{code}/summary?event={event_id}", 60)
+    comp = ((data.get("header") or {}).get("competitions") or [{}])[0]
+    sides = {c.get("homeAway"): c for c in comp.get("competitors", [])}
+    if "home" not in sides or "away" not in sides:
+        raise UpstreamError("match unavailable")
+    status = comp.get("status") or {}
+    stype = status.get("type") or {}
+    state = stype.get("state", "pre")
+    home, away = sides["home"], sides["away"]
+    hwinner, awinner = home.get("winner"), away.get("winner")
+    team_side = {}
+    for side, c in (("home", home), ("away", away)):
+        tid = (c.get("team") or {}).get("id")
+        if tid:
+            team_side[str(tid)] = side
+    events = []
+    for ev in data.get("keyEvents") or comp.get("details") or []:
+        clock = ev.get("clock") or {}
+        t = ev.get("type") or {}
+        slug = str(t.get("type") or "")
+        if ev.get("scoringPlay") or slug.startswith("goal"):
+            kind = "shootout" if ev.get("shootout") else "goal"
+        elif "card" in slug or ev.get("redCard"):
+            kind = "card"
+        elif "substitut" in slug:
+            kind = "sub"
+        else:
+            kind = "info"
+        side = team_side.get(str((ev.get("team") or {}).get("id") or ""))
+        participants = ev.get("participants") or []
+        scorer = ""
+        if kind in ("goal", "shootout"):
+            for participant in participants:
+                athlete = participant.get("athlete") or {}
+                scorer = athlete.get("displayName") or athlete.get("fullName") or ""
+                if scorer:
+                    break
+        events.append({
+            "minute": clock.get("displayValue") or "",
+            "side": side,
+            "kind": kind,
+            "scorer": scorer,
+            "text": ev.get("text") or t.get("text") or "",
+        })
+    info = data.get("gameInfo") or {}
+    venue = (info.get("venue") or comp.get("venue") or {})
+    # Scorers for the under-the-score lines: the detail feed names the
+    # scorer first and the assister second. An own goal counts for the
+    # other side but keeps the scorer's name, marked (og).
+    goals = []
+    for d in comp.get("details") or []:
+        if not d.get("scoringPlay"):
+            continue
+        parts = [p.get("athlete") or {} for p in d.get("participants") or []]
+        if not parts:
+            continue
+        scorer = parts[0].get("shortName") or parts[0].get("displayName") or ""
+        assist = parts[1].get("shortName") or parts[1].get("displayName") or "" if len(parts) > 1 else ""
+        goals.append({
+            "minute": _minute(d.get("clock"), d.get("addedClock")),
+            "side": team_side.get(str((d.get("team") or {}).get("id") or "")),
+            "scorer": scorer,
+            "assist": assist,
+            "ownGoal": bool(d.get("ownGoal")),
+            "penalty": bool(d.get("penaltyKick")),
+        })
+    return {
+        "id": str(event_id),
+        "leagueId": league_id,
+        "league": LEAGUES[league_id][1],
+        "kickoff": comp.get("date"),
+        "state": state,
+        "minute": (status.get("displayClock") or "").strip() or None if state == "in" else None,
+        "status": stype.get("shortDetail") or stype.get("description") or "",
+        "home": _club(home.get("team") or {}),
+        "away": _club(away.get("team") or {}),
+        "score": None if state == "pre" else {"home": str(home.get("score", "0")), "away": str(away.get("score", "0"))},
+        "winner": "home" if hwinner else "away" if awinner else ("draw" if state == "post" else None),
+        "venue": venue.get("fullName") or "",
+        "city": ((venue.get("address") or {}).get("city")) or "",
+        "attendance": info.get("attendance"),
+        "officials": [{"name": o.get("displayName") or o.get("fullName") or "",
+                       "role": ((o.get("position") or {}).get("displayName")) or ""}
+                      for o in info.get("officials") or []],
+        "events": events,
+        "goals": goals,
+    }
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -302,6 +569,13 @@ class Handler(BaseHTTPRequestHandler):
                     window=int(arg("window", "2") or 2), count=max(1, min(20, int(arg("count", "5") or 5)))))
             if url.path == "/api/clubs":
                 return self._json(200, clubs_summary([x for x in arg("clubs").split(",") if x]))
+            if url.path == "/api/teams":
+                return self._json(200, {"teams": teams(arg("q"))})
+            if url.path == "/api/match":
+                lid, eid = arg("league", "pl"), arg("id")
+                if lid not in LEAGUES or not eid.isdigit():
+                    return self._json(400, {"error": "bad request"})
+                return self._json(200, match_detail(lid, eid))
             if url.path == "/api/scoreboard":
                 lid = arg("league", "pl")
                 if lid not in LEAGUES:
@@ -336,8 +610,24 @@ class Handler(BaseHTTPRequestHandler):
         self.wfile.write(body)
 
 
+def warm() -> None:
+    """Fetch what the pages ask for first, so the first visit is quick."""
+    now = datetime.now(timezone.utc)
+    scan(list(LEAGUES), now - timedelta(days=PAST_DAYS), now + timedelta(days=AHEAD_DAYS))
+    with ThreadPoolExecutor(max_workers=len(LEAGUES)) as pool:
+        list(pool.map(lambda lid: _quiet(standings, lid), LEAGUES))
+
+
+def _quiet(fn, *args):
+    try:
+        return fn(*args)
+    except UpstreamError:
+        return None
+
+
 def main() -> None:
     srv = ThreadingHTTPServer((HOST, PORT), Handler)
+    threading.Thread(target=warm, daemon=True).start()
     print(f"Football listening on http://{HOST}:{PORT}", flush=True)
     try:
         srv.serve_forever()

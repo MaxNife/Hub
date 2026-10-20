@@ -58,6 +58,24 @@
     padding: 16px 0; border-top: 1px solid var(--line);
   }
   .match:last-child { border-bottom: 1px solid var(--line); }
+  a.match { color: inherit; text-decoration: none; border-radius: 12px; }
+  a.match:hover { background: var(--surface); }
+  .detail-score { display: grid; grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr); align-items: center; gap: 14px; margin: 16px auto 4px; max-width: 620px; font-family: var(--display); }
+  .detail-team { min-width: 0; }
+  .detail-team.away { text-align: right; }
+  .detail-team > span:first-child { display: block; font-size: 20px; font-weight: 650; }
+  .detail-goals { margin-top: 5px; font-size: 12px; line-height: 1.5; color: var(--muted); }
+  .detail-goals > span { display: block; }
+  .detail-goals b { color: var(--ink); font-weight: 600; }
+  .detail-number { font-size: 40px; font-weight: 700; letter-spacing: -0.02em; }
+  .detail-status { margin: 8px 0 8px; text-align: center; font-size: 14px; color: var(--muted); }
+  .ev { display: grid; grid-template-columns: 52px 64px minmax(0, 1fr); gap: 10px; padding: 10px 0; border-top: 1px solid var(--line); font-size: 15px; }
+  .ev:last-child { border-bottom: 1px solid var(--line); }
+  .ev-min { font-weight: 700; }
+  .ev-tag { font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); }
+  .ev-tag.goal { color: var(--live); }
+  .ev-tag.card { color: var(--bad); }
+  .meta { margin: 16px 0 0; font-size: 14px; color: var(--muted); }
   .state { font-size: 13px; font-weight: 700; color: var(--muted); }
   .state.live { display: inline-flex; align-items: center; justify-self: start; height: 22px; padding: 0 8px; border-radius: 999px; background: var(--live); color: var(--live-ink); font-size: 12px; }
   .team { display: flex; align-items: center; gap: 10px; min-width: 0; font-family: var(--display); font-size: 19px; font-weight: 600; letter-spacing: -0.015em; }
@@ -99,6 +117,11 @@
   .club-list button { width: 26px; height: 26px; border: none; border-radius: 999px; background: none; color: var(--muted); cursor: pointer; }
   .club-add { display: flex; gap: 8px; width: 100%; }
   .club-add input { flex: 1; min-width: 0; height: 38px; padding: 0 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--paper); font: inherit; font-size: 15px; }
+  .club-found { display: flex; flex-direction: column; gap: 2px; width: 100%; margin-top: 6px; }
+  .club-found button { display: flex; align-items: center; gap: 10px; min-height: 44px; padding: 4px 10px; border: none; border-radius: 10px; background: none; color: inherit; font: inherit; text-align: left; cursor: pointer; }
+  .club-found button:hover, .club-found button:focus-visible { background: var(--line); }
+  .club-found b { display: block; font-size: 15px; }
+  .club-found small, .club-found p { color: var(--muted); font-size: 13px; margin: 4px 10px; }
   .league-checks { display: grid; grid-template-columns: 1fr 1fr; gap: 4px 12px; width: 100%; }
   .league-checks label { display: flex; align-items: center; gap: 8px; min-height: 36px; font-size: 15px; }
   .league-checks input { width: 18px; height: 18px; accent-color: var(--ink); }
@@ -201,21 +224,58 @@
       var add = document.createElement('div');
       add.className = 'club-add';
       var input = document.createElement('input');
-      input.placeholder = 'Add a club, e.g. Chelsea';
-      input.setAttribute('aria-label', 'Add a club');
+      input.placeholder = 'Search for a club, e.g. Chelsea';
+      input.setAttribute('aria-label', 'Search for a club');
+      input.autocomplete = 'off';
       var btn = document.createElement('button');
       btn.type = 'button'; btn.className = 'ak-pill'; btn.textContent = 'Add';
-      function go() {
-        var name = input.value.trim();
-        if (!name) return;
-        if (!k.settings.clubs.some(function (c) { return c.name.toLowerCase() === name.toLowerCase(); })) k.set('clubs', k.settings.clubs.concat([club(name)]));
+      var found = document.createElement('div');
+      found.className = 'club-found';
+      found.setAttribute('aria-live', 'polite');
+      // Clubs come from the scoreboard's own list, so a saved name always
+      // matches the one its scores are listed under.
+      var matches = [], failed = false, timer = null, seq = 0;
+      function follow(c) {
+        if (!k.settings.clubs.some(function (x) { return x.name.toLowerCase() === c.name.toLowerCase(); }))
+          k.set('clubs', k.settings.clubs.concat([{ name: c.name, code: c.code, color: c.color }]));
         paint();
         box.querySelector('input').focus();
       }
+      function search() {
+        var term = input.value.trim(), mine = ++seq;
+        clearTimeout(timer);
+        if (term.length < 2) { matches = []; found.innerHTML = ''; return; }
+        timer = setTimeout(function () {
+          getJSON('./api/teams?q=' + encodeURIComponent(term)).then(function (body) {
+            if (mine !== seq) return;
+            failed = false; matches = body.teams;
+            found.innerHTML = matches.length ? '' : '<p>No clubs match “' + esc(term) + '”.</p>';
+            matches.forEach(function (t) {
+              var b = document.createElement('button');
+              b.type = 'button';
+              b.innerHTML = shield(t.color) + '<span><b>' + esc(t.name) + '</b><small>' +
+                esc([t.fullName !== t.name ? t.fullName : '', t.league].filter(Boolean).join(' · ')) + '</small></span>';
+              b.addEventListener('click', function () { follow(t); });
+              found.appendChild(b);
+            });
+          }).catch(function (e) {
+            if (mine !== seq) return;
+            failed = true; matches = [];
+            found.innerHTML = '<p>Couldn’t search clubs (' + esc(e.message) + '). Add uses the name as typed.</p>';
+          });
+        }, 300);
+      }
+      function go() {
+        var name = input.value.trim();
+        if (!name) return;
+        if (matches.length) follow(matches[0]);  // Enter takes the top match
+        else if (failed) follow(club(name));
+      }
       btn.addEventListener('click', go);
+      input.addEventListener('input', search);
       input.addEventListener('keydown', function (e) { if (e.key === 'Enter') go(); });
       add.append(input, btn);
-      box.append(list, add);
+      box.append(list, add, found);
     }
     paint();
     return box;
@@ -274,6 +334,7 @@
   }
   function time(d) { return d.toLocaleTimeString(kit.settings.clock === '12' ? 'en-US' : 'en-GB', { hour: kit.settings.clock === '12' ? 'numeric' : '2-digit', minute: '2-digit', hour12: kit.settings.clock === '12' }); }
   function short(d) { return dayLabel(d).replace(/^(\w+day) (\d+) (\w+)$/, function (m, a, b, c) { return a.slice(0, 3) + ' ' + b + ' ' + c.slice(0, 3); }); }
+  function matchHref(m) { return '#match=' + encodeURIComponent(m.leagueId) + ':' + encodeURIComponent(m.id); }
   function matchRow(m) {
     var d = new Date(m.kickoff);
     var state = m.state === 'in'
@@ -283,12 +344,12 @@
     var hs = m.score ? +m.score.home : 0, as = m.score ? +m.score.away : 0;
     var done = m.state === 'post';
     var mine = function (c) { return codes().indexOf((c.code || '').toUpperCase()) >= 0; };
-    return '<div class="match">' + state +
+    return '<a class="match match-link" href="' + matchHref(m) + '">' + state +
       '<span class="team home' + (done && hs > as ? ' win' : '') + '"><span>' + esc(m.home.name) + '</span>' + shield(m.home.color) + '</span>' +
       '<span class="score' + (m.score ? '' : ' soft') + '">' + center + '</span>' +
       '<span class="team' + (done && as > hs ? ' win' : '') + '">' + shield(m.away.color) + '<span>' + esc(m.away.name) + '</span></span>' +
       (m.venue && kit.settings.venue ? '<span class="venue hide-m">' + esc(m.venue) + (mine(m.home) || mine(m.away) ? ' · your club' : '') + '</span>' : '') +
-      '</div>';
+      '</a>';
   }
   function list(matches, empty) {
     if (!matches.length) return '<div class="empty"><b>' + empty[0] + '</b>' + empty[1] + '</div>';
@@ -349,29 +410,41 @@
     return '<article class="club' + (c.live ? ' is-live' : '') + '"><h3>' + shield(color) + esc(c.name) + '</h3>' + lines + '</article>';
   }
 
+  // Only the latest request may paint: a slow answer for a tab the user
+  // has already left must not overwrite (or crash) the one now showing.
+  // Answers are remembered, so going back to a view paints it at once.
+  var seq = 0, seen = {};
+  function paintView(view, body) {
+    if (view.tab === 'table') return renderTable(body.rows);
+    var ms = body.matches.slice().sort(function (a, b) { return new Date(a.kickoff) - new Date(b.kickoff); });
+    var now = Date.now();
+    if (view.tab === 'results') ms = ms.filter(function (m) { return m.state === 'post'; }).reverse();
+    if (view.tab === 'fixtures') ms = ms.filter(function (m) { return m.state === 'pre' && new Date(m.kickoff) > now; });
+    out.innerHTML = list(ms, view.tab === 'today'
+      ? ['No matches today', 'Try Results or Fixtures.']
+      : view.tab === 'results' ? ['No recent results', 'Nothing finished in the last two weeks.'] : ['No fixtures yet', 'Nothing scheduled in the next four weeks.']);
+    return ms;
+  }
   function load() {
-    var league = leagueSel.value;
+    var league = leagueSel.value, mine = ++seq, view = { tab: tab };
     try { localStorage.setItem('football:league', league); } catch (e) {}
     clearTimeout(timer);
     Array.prototype.forEach.call(document.getElementById('tabs').children, function (x) { x.setAttribute('aria-pressed', String(x.dataset.tab === tab)); });
     var url = tab === 'table' ? './api/table?league=' + league
       : './api/scoreboard?league=' + league + (tab === 'results' ? '&back=14' : tab === 'fixtures' ? '&ahead=28' : '');
+    if (seen[url]) paintView(view, seen[url]);
+    else out.innerHTML = '<p class="ak-empty">Loading…</p>';
     getJSON(url).then(function (body) {
-      if (tab === 'table') {
-        renderTable(body.rows);
-      } else {
-        var ms = body.matches.slice().sort(function (a, b) { return new Date(a.kickoff) - new Date(b.kickoff); });
-        var now = Date.now();
-        if (tab === 'results') ms = ms.filter(function (m) { return m.state === 'post'; }).reverse();
-        if (tab === 'fixtures') ms = ms.filter(function (m) { return m.state === 'pre' && new Date(m.kickoff) > now; });
-        out.innerHTML = list(ms, tab === 'today'
-          ? ['No matches today', 'Try Results or Fixtures.']
-          : tab === 'results' ? ['No recent results', 'Nothing finished in the last two weeks.'] : ['No fixtures yet', 'Nothing scheduled in the next four weeks.']);
-        // Keep live scores fresh while this tab is open.
-        if (tab === 'today' && ms.some(function (m) { return m.state === 'in'; })) timer = setTimeout(load, 60000);
-      }
+      if (mine !== seq) return;
+      seen[url] = body;
+      var ms = paintView(view, body);
+      // Keep live scores fresh while this tab is open.
+      if (ms && view.tab === 'today' && ms.some(function (m) { return m.state === 'in'; })) timer = setTimeout(load, 60000);
       stamp.textContent = 'Updated ' + time(new Date()) + ' · data from ESPN';
-    }).catch(function (e) { fail(e.message); });
+    }).catch(function (e) {
+      if (mine !== seq) return;
+      if (!seen[url]) fail(e.message);
+    });
   }
   function renderTable(rows) {
     if (!rows.length) return fail('No table for this competition yet.');
@@ -391,17 +464,94 @@
     });
     out.innerHTML = html + '</tbody></table>';
   }
+  // Full match info, opened from the Home carousel or any match row.
+  function matchRoute() {
+    var m = /^#match=([^:]*):(.+)$/.exec(location.hash || '');
+    return m ? { league: decodeURIComponent(m[1]), id: decodeURIComponent(m[2]) } : null;
+  }
+  function eventTag(kind) {
+    if (kind === 'goal' || kind === 'shootout') return ['goal', kind === 'shootout' ? 'Pens' : 'Goal'];
+    if (kind === 'card') return ['card', 'Card'];
+    if (kind === 'sub') return ['sub', 'Sub'];
+    return ['', ''];
+  }
+  function detailHTML(d) {
+    var center = d.score ? esc(d.score.home) + '–' + esc(d.score.away) : 'v';
+    function goals(side) {
+      // Grouped scorers with minutes, one line each: Isak 6', 9'.
+      if (d.goals && d.goals.length) {
+        var order = [], byName = {};
+        d.goals.forEach(function (g) {
+          if (g.side !== side || !g.scorer) return;
+          var label = g.scorer + (g.ownGoal ? ' (og)' : g.penalty ? ' (pen)' : '');
+          if (!byName[label]) { byName[label] = []; order.push(label); }
+          if (g.minute) byName[label].push(g.minute);
+        });
+        return order.map(function (label) {
+          return '<span><b>' + esc(label) + '</b> ' + esc(byName[label].join(', ')) + '</span>';
+        }).join('');
+      }
+      // Older service without the goals list: one line per goal event.
+      return (d.events || []).filter(function (e) {
+        return e.side === side && (e.kind === 'goal' || e.kind === 'shootout');
+      }).map(function (e) {
+        return '<span>' + (e.scorer ? '<b>' + esc(e.scorer) + '</b> ' : '') + esc(e.minute) + '</span>';
+      }).join('');
+    }
+    var state = d.state === 'in'
+      ? '<span class="state live">' + esc(d.minute || 'Live') + '</span>'
+      : '<span class="state">' + esc(d.status || (d.state === 'post' ? 'FT' : time(new Date(d.kickoff)))) + '</span>';
+    var evs = (d.events || []).map(function (e) {
+      var tag = eventTag(e.kind);
+      return '<div class="ev"><span class="ev-min">' + esc(e.minute) + '</span>' +
+        '<span class="ev-tag ' + tag[0] + '">' + tag[1] + '</span><span>' + esc(e.text) + '</span></div>';
+    }).join('');
+    var meta = [d.venue + (d.city ? ', ' + d.city : ''),
+      d.attendance ? d.attendance.toLocaleString('en-GB') + ' in attendance' : '',
+      (d.officials || []).map(function (o) { return o.role ? o.role + ': ' + o.name : o.name; }).filter(Boolean).join(' · ')]
+      .filter(Boolean).join(' · ');
+    return '<button type="button" class="ak-pill" data-back>← All matches</button>' +
+      '<p class="day">' + esc(d.league) + ' · ' + esc(dayLabel(new Date(d.kickoff))) + '</p>' +
+      '<div class="detail-score">' +
+        '<div class="detail-team home"><span>' + esc(d.home.name) + '</span><div class="detail-goals">' + goals('home') + '</div></div>' +
+        '<span class="detail-number">' + center + '</span>' +
+        '<div class="detail-team away"><span>' + esc(d.away.name) + '</span><div class="detail-goals">' + goals('away') + '</div></div>' +
+      '</div>' +
+      '<p class="detail-status">' + state + '</p>' +
+      (evs || '<div class="empty"><b>No events yet</b>Goals, cards and subs appear here once the match is under way.</div>') +
+      (meta ? '<p class="meta">' + esc(meta) + '</p>' : '');
+  }
+  function loadMatch(r, refresh) {
+    var mine = ++seq;
+    clearTimeout(timer);
+    if (!refresh) out.innerHTML = '<p class="ak-empty">Loading match…</p>';
+    getJSON('./api/match?league=' + encodeURIComponent(r.league) + '&id=' + encodeURIComponent(r.id)).then(function (d) {
+      if (mine !== seq) return;
+      out.innerHTML = detailHTML(d);
+      var back = out.querySelector('[data-back]');
+      if (back) back.addEventListener('click', function () { location.hash = ''; });
+      stamp.textContent = 'Updated ' + time(new Date()) + ' · data from ESPN';
+      if (d.state === 'in') timer = setTimeout(function () { loadMatch(r, true); }, 60000);
+    }).catch(function (e) { if (mine === seq && !refresh) fail(e.message); });
+  }
+  function route() {
+    var r = matchRoute();
+    if (r) loadMatch(r);
+    else load();
+  }
   document.getElementById('tabs').addEventListener('click', function (e) {
     var b = e.target.closest('button');
     if (!b) return;
     tab = b.dataset.tab;
-    load();
+    if (matchRoute()) location.hash = '';
+    else load();
   });
   document.getElementById('editclubs').addEventListener('click', function () { kit.openSettings(); });
-  leagueSel.addEventListener('change', load);
+  leagueSel.addEventListener('change', function () { if (matchRoute()) location.hash = ''; else load(); });
+  window.addEventListener('hashchange', route);
   paintLeagues();
   loadClubs();
-  load();
+  route();
 })();
 </script>
 </body>
