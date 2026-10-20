@@ -1,1 +1,4 @@
 faster-whisper>=1.0
+# faster-whisper decodes audio with PyAV. Windows Smart App Control blocks
+# av 18.1's container\core.pyd; 17.0 loads fine.
+av==17.0.0
