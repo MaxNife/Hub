@@ -1,8 +1,9 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
+import { apiJSON } from '../api';
 import { Link } from 'react-router-dom';
 import { AppIcon } from '../components/AppIcon';
 import { IconChevronLeft, IconClock, IconClose, IconPlus, Shield } from '../components/Icons';
-import { LEAGUES, clubFromName, idlePreview, useFootballFeed, useFootballSettings, type IdleMode } from '../football';
+import { LEAGUES, clubFromName, idlePreview, type Club, useFootballFeed, useFootballSettings, type IdleMode } from '../football';
 import { useApps } from '../live';
 
 const IDLE: { id: IdleMode; title: string; body: string }[] = [
@@ -10,6 +11,13 @@ const IDLE: { id: IdleMode; title: string; body: string }[] = [
   { id: 'results', title: 'Always show latest results', body: 'Full-time scores from your clubs and leagues.' },
   { id: 'fixtures', title: 'Always show upcoming fixtures', body: 'Kickoff times for the next matches.' },
 ];
+
+interface Team extends Club {
+  fullName: string;
+  league: string;
+}
+
+const pick = (t: Team): Club => ({ name: t.name, code: t.code, color: t.color });
 
 // What the Home football row follows. Every change saves immediately.
 export function FootballSettings() {
@@ -21,12 +29,36 @@ export function FootballSettings() {
   const source = useFootballFeed(s, app, now);
   const nextDays = source.kind === 'live' || source.kind === 'sample' ? source.feed.nextMatchInDays : null;
 
-  const addClub = () => {
+  const [found, setFound] = useState<Team[] | null>(null);
+  const [searchError, setSearchError] = useState('');
+
+  // Search the clubs the Football app knows, so a saved club's name is
+  // exactly the one its scores are listed under.
+  useEffect(() => {
+    const term = draft.trim();
+    if (term.length < 2 || !app || app.offline) return;
+    const t = window.setTimeout(() => {
+      apiJSON<{ teams: Team[] }>(`/apps/football/api/teams?q=${encodeURIComponent(term)}`)
+        .then((r) => { setFound(r.teams); setSearchError(''); })
+        .catch((e: Error) => { setFound(null); setSearchError(e.message); });
+    }, 300);
+    return () => window.clearTimeout(t);
+  }, [draft, app]);
+
+  const addClub = (club: Club) => {
+    const key = club.name.toLowerCase();
+    if (!s.clubs.some((c) => c.name.toLowerCase() === key)) save({ ...s, clubs: [...s.clubs, club] });
+    setDraft('');
+    setFound(null);
+  };
+  // Enter or Add takes the top match. Without the Football app there's
+  // nothing to search, so the typed name is used as it is.
+  const canSearch = !!app && !app.offline && !searchError;
+  const addDraft = () => {
     const name = draft.trim();
     if (!name) return;
-    const club = clubFromName(name);
-    if (!s.clubs.some((c) => c.code === club.code)) save({ ...s, clubs: [...s.clubs, club] });
-    setDraft('');
+    if (found?.length) addClub(pick(found[0]));
+    else if (!canSearch) addClub(clubFromName(name));
   };
 
   return (
@@ -61,14 +93,14 @@ export function FootballSettings() {
         <p className="form-help">Your clubs always come first in the carousel, even in leagues you don't follow.</p>
         <div className="chip-row">
           {s.clubs.map((c) => (
-            <span key={c.code} className="club-chip">
+            <span key={c.name} className="club-chip">
               <Shield color={c.color} width={20} />
               {c.name}
               <button
                 type="button"
                 className="chip-x"
                 aria-label={`Remove ${c.name}`}
-                onClick={() => save({ ...s, clubs: s.clubs.filter((x) => x.code !== c.code) })}
+                onClick={() => save({ ...s, clubs: s.clubs.filter((x) => x.name !== c.name) })}
               >
                 <IconClose size={14} />
               </button>
@@ -80,15 +112,30 @@ export function FootballSettings() {
             className="club-input"
             type="text"
             autoComplete="off"
-            placeholder="Add a club"
+            placeholder="Search for a club"
             value={draft}
-            onChange={(e) => setDraft(e.target.value)}
-            onKeyDown={(e) => { if (e.key === 'Enter') addClub(); }}
+            onChange={(e) => { setDraft(e.target.value); if (e.target.value.trim().length < 2) setFound(null); }}
+            onKeyDown={(e) => { if (e.key === 'Enter') addDraft(); }}
           />
-          <button type="button" className="ink-btn" onClick={addClub} disabled={!draft.trim()}>
+          <button type="button" className="ink-btn" onClick={addDraft} disabled={!draft.trim() || (canSearch && !found?.length)}>
             <IconPlus size={14} strokeWidth={2.2} />Add
           </button>
         </div>
+        {searchError && <p className="form-help error-text">Couldn't search clubs ({searchError}). Add sets the name as typed.</p>}
+        {!canSearch && !searchError && draft.trim() && (
+          <p className="form-help">The Football app isn't running, so clubs can't be searched. Check the spelling matches its scores.</p>
+        )}
+        {found && draft.trim().length >= 2 && (
+          <div className="link-list">
+            {found.length === 0 && <p className="form-help">No clubs match “{draft.trim()}”.</p>}
+            {found.map((t) => (
+              <button key={t.fullName || t.name} type="button" className="link-row" onClick={() => addClub(pick(t))}>
+                <Shield color={t.color} width={20} />
+                <span className="grow"><b>{t.name}</b><small>{[t.fullName !== t.name && t.fullName, t.league].filter(Boolean).join(' · ')}</small></span>
+              </button>
+            ))}
+          </div>
+        )}
       </section>
 
       <section className="form-section" aria-labelledby="idle-h">
@@ -123,8 +170,8 @@ export function FootballSettings() {
 
       <section className="form-section split" aria-labelledby="car-h">
         <div>
-          <h2 id="car-h">Carousel length</h2>
-          <p className="form-help">How many matches to rotate through on Home.</p>
+          <h2 id="car-h">Carousel</h2>
+          <p className="form-help">How many matches to rotate through on Home, and how fast.</p>
         </div>
         <label htmlFor="count" className="sr-only">Matches in the carousel</label>
         <select id="count" value={s.count} onChange={(e) => save({ ...s, count: Number(e.target.value) })}>
@@ -132,6 +179,29 @@ export function FootballSettings() {
           <option value={5}>5 matches</option>
           <option value={8}>8 matches</option>
         </select>
+      </section>
+
+      <section className="form-section split" aria-labelledby="rot-h">
+        <div>
+          <h2 id="rot-h">Auto-rotate</h2>
+          <p className="form-help">Move to the next match every few seconds. 0 turns it off.</p>
+        </div>
+        <label htmlFor="rotate" className="sr-only">Rotate every so many seconds</label>
+        <div className="num-wrap">
+          <input
+            id="rotate"
+            type="number"
+            min={0}
+            max={300}
+            step={1}
+            value={s.rotate}
+            onChange={(e) => {
+              const v = Math.round(Number(e.target.value));
+              save({ ...s, rotate: Number.isFinite(v) ? Math.min(300, Math.max(0, v)) : 0 });
+            }}
+          />
+          <span>seconds</span>
+        </div>
       </section>
     </div>
   );

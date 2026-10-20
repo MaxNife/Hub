@@ -1,4 +1,4 @@
-import { useQuery } from '@tanstack/react-query';
+import { keepPreviousData, useQuery } from '@tanstack/react-query';
 import { apiJSON } from './api';
 import { readJSON, useStored, write } from './store';
 import type { TileApp } from './live';
@@ -21,6 +21,7 @@ export interface FootballSettings {
   idle: IdleMode;
   window: number; // auto mode: switch to fixtures this many days before kickoff
   count: number; // matches in the carousel
+  rotate: number; // carousel auto-advance, in seconds (0 = off)
 }
 
 export const LEAGUES = [
@@ -57,6 +58,7 @@ export const DEFAULT_SETTINGS: FootballSettings = {
   idle: 'auto',
   window: 2,
   count: 5,
+  rotate: 8,
 };
 
 const KEY = 'football:settings';
@@ -71,6 +73,7 @@ export function useFootballSettings(): [FootballSettings, (next: FootballSetting
 // ─── Feed ────────────────────────────────────────────────────────────────
 
 export interface Match {
+  id: string; // ESPN event id (live feed) or a stable sample id
   home: Club;
   away: Club;
   state: 'pre' | 'in' | 'post';
@@ -115,6 +118,8 @@ export function useFootballFeed(settings: FootballSettings, app: TileApp | undef
     enabled,
     retry: 1,
     staleTime: 30_000,
+    // A settings change refetches; keep showing the old feed until it lands.
+    placeholderData: keepPreviousData,
     refetchInterval: (query) => (query.state.data?.mode === 'live' ? 60_000 : 5 * 60_000),
   });
   if (!app) return { kind: 'sample', feed: sampleFeed(settings, now) };
@@ -197,24 +202,24 @@ function sampleMatches(now: Date) {
     d.setHours(h, m, 0, 0);
     return d.toISOString();
   };
-  const mk = (h: string, a: string, leagueId: string, state: Match['state'], kickoff: string, score: [number, number] | null, venue: string): Match => ({
-    home: CLUBS[h], away: CLUBS[a], state, kickoff, venue, leagueId,
+  const mk = (id: string, h: string, a: string, leagueId: string, state: Match['state'], kickoff: string, score: [number, number] | null, venue: string): Match => ({
+    id, home: CLUBS[h], away: CLUBS[a], state, kickoff, venue, leagueId,
     league: LEAGUES.find((l) => l.id === leagueId)?.name ?? leagueId,
     score: score ? { home: String(score[0]), away: String(score[1]) } : null,
   });
   return {
-    live: [mk('ARS', 'CHE', 'pl', 'in', at(0, 20), [2, 1], 'Emirates Stadium'), mk('LIV', 'EVE', 'pl', 'in', at(0, 20), [0, 0], 'Anfield')],
+    live: [mk('sample-live-1', 'ARS', 'CHE', 'pl', 'in', at(0, 20), [2, 1], 'Emirates Stadium'), mk('sample-live-2', 'LIV', 'EVE', 'pl', 'in', at(0, 20), [0, 0], 'Anfield')],
     results: [
-      mk('LIV', 'EVE', 'pl', 'post', at(-1, 15), [1, 1], 'Anfield'),
-      mk('ARS', 'CHE', 'pl', 'post', at(-3, 17, 30), [2, 1], 'Emirates Stadium'),
-      mk('ARS', 'PSG', 'ucl', 'post', at(-8, 20), [3, 1], 'Emirates Stadium'),
-      mk('BHA', 'ARS', 'pl', 'post', at(-11, 15), [0, 2], 'Amex Stadium'),
+      mk('sample-res-1', 'LIV', 'EVE', 'pl', 'post', at(-1, 15), [1, 1], 'Anfield'),
+      mk('sample-res-2', 'ARS', 'CHE', 'pl', 'post', at(-3, 17, 30), [2, 1], 'Emirates Stadium'),
+      mk('sample-res-3', 'ARS', 'PSG', 'ucl', 'post', at(-8, 20), [3, 1], 'Emirates Stadium'),
+      mk('sample-res-4', 'BHA', 'ARS', 'pl', 'post', at(-11, 15), [0, 2], 'Amex Stadium'),
     ],
     fixtures: [
-      mk('ARS', 'NEW', 'pl', 'pre', at(NEXT_MATCH_DAYS, 17, 30), null, 'Emirates Stadium'),
-      mk('CHE', 'LIV', 'pl', 'pre', at(6, 16, 30), null, 'Stamford Bridge'),
-      mk('PSG', 'ARS', 'ucl', 'pre', at(9, 20), null, 'Parc des Princes'),
-      mk('BHA', 'ARS', 'pl', 'pre', at(12, 15), null, 'Amex Stadium'),
+      mk('sample-fix-1', 'ARS', 'NEW', 'pl', 'pre', at(NEXT_MATCH_DAYS, 17, 30), null, 'Emirates Stadium'),
+      mk('sample-fix-2', 'CHE', 'LIV', 'pl', 'pre', at(6, 16, 30), null, 'Stamford Bridge'),
+      mk('sample-fix-3', 'PSG', 'ARS', 'ucl', 'pre', at(9, 20), null, 'Parc des Princes'),
+      mk('sample-fix-4', 'BHA', 'ARS', 'pl', 'pre', at(12, 15), null, 'Amex Stadium'),
     ],
   };
 }

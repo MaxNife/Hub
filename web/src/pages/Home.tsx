@@ -14,7 +14,7 @@ import { useQueryClient } from '@tanstack/react-query';
 import { healthBadge, useApps, type TileApp } from '../live';
 import { inSentence, rerollMeal, useMealPick } from '../meal';
 import { fmtSecs, useMemoryBest, useMemoryProgress } from '../memory';
-import { useShell } from '../shell-context';
+import { useShell, reducedMotion } from '../shell-context';
 import { stagger } from '../motion';
 import { eventText, tempText, useStatus } from '../status';
 
@@ -130,10 +130,23 @@ function FootballRow({ now, app }: { now: Date; app?: TileApp }) {
   const [settings] = useFootballSettings();
   const source = useFootballFeed(settings, app, now);
   const qc = useQueryClient();
+  const { launch } = useShell();
   const [raw, setRaw] = useState(0);
   const [checking, setChecking] = useState(false);
+  const [paused, setPaused] = useState(false);
 
-  if (source.kind === 'offline' || source.kind === 'error' || source.kind === 'loading') {
+  const feed = source.kind === 'live' || source.kind === 'sample' ? source.feed : null;
+  const total = feed?.matches.length ?? 0;
+  // Timed rotation: advance every `rotate` seconds, restarting the clock
+  // after each step and after every manual move. Hovering or focusing the
+  // row (and reduced-motion) holds the carousel still.
+  useEffect(() => {
+    if (!feed || total < 2 || paused || !(settings.rotate > 0) || reducedMotion()) return;
+    const t = window.setTimeout(() => setRaw((r) => r + 1), settings.rotate * 1000);
+    return () => window.clearTimeout(t);
+  }, [feed, total, paused, settings.rotate, raw]);
+
+  if (!feed) {
     const retry = async () => {
       setChecking(true);
       await api('/api/apps/football/check', { method: 'POST' }).catch(() => {});
@@ -163,7 +176,6 @@ function FootballRow({ now, app }: { now: Date; app?: TileApp }) {
     );
   }
 
-  const { feed } = source;
   const n = feed.matches.length;
   const idx = n ? ((raw % n) + n) % n : 0;
   const match = feed.matches[idx];
@@ -182,6 +194,17 @@ function FootballRow({ now, app }: { now: Date; app?: TileApp }) {
   }
 
   const minute = minuteText(match);
+  // Only the live feed can open full match info: sample data has no
+  // service app behind it to fetch the detail from.
+  const teams = (
+    <>
+      <Shield color={match.home.color} code={match.home.code} />
+      <span className="fb-team">{match.home.name}</span>
+      <span className={`fb-center${match.state === 'pre' ? ' soft' : ''}`}>{centerText(match)}</span>
+      <span className="fb-team">{match.away.name}</span>
+      <Shield color={match.away.color} code={match.away.code} />
+    </>
+  );
   return (
     <div
       className="today-row football-row"
@@ -192,6 +215,10 @@ function FootballRow({ now, app }: { now: Date; app?: TileApp }) {
         if (e.key === 'ArrowLeft') setRaw(idx - 1);
         if (e.key === 'ArrowRight') setRaw(idx + 1);
       }}
+      onMouseEnter={() => setPaused(true)}
+      onMouseLeave={() => setPaused(false)}
+      onFocus={() => setPaused(true)}
+      onBlur={() => setPaused(false)}
     >
       <RowIcon app={app} kind="football" />
       <div className="fb-body">
@@ -206,13 +233,23 @@ function FootballRow({ now, app }: { now: Date; app?: TileApp }) {
             <span className="fb-sample" title="Install the Football app for real scores">Sample data</span>
           )}
         </div>
-        <div className="fb-teams" key={`${feed.mode}-${idx}`} aria-live="polite">
-          <Shield color={match.home.color} code={match.home.code} />
-          <span className="fb-team">{match.home.name}</span>
-          <span className={`fb-center${match.state === 'pre' ? ' soft' : ''}`}>{centerText(match)}</span>
-          <span className="fb-team">{match.away.name}</span>
-          <Shield color={match.away.color} code={match.away.code} />
-        </div>
+        {source.kind === 'live' ? (
+          <button
+            type="button"
+            className="fb-teams fb-open"
+            key={`${feed.mode}-${idx}`}
+            aria-live="polite"
+            aria-label={`Full match info: ${match.home.name} against ${match.away.name}`}
+            title="Full match info"
+            onClick={(e) => launch('football', e.currentTarget, `#match=${match.leagueId}:${match.id}`)}
+          >
+            {teams}
+          </button>
+        ) : (
+          <div className="fb-teams" key={`${feed.mode}-${idx}`} aria-live="polite">
+            {teams}
+          </div>
+        )}
         <p className="row-sub d-only">{detailText(match, now)}</p>
         <div className="fb-nav-m m-only">
           <Dots n={n} idx={idx} />
