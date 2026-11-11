@@ -86,14 +86,18 @@
   .score.soft { font-weight: 500; color: var(--muted); font-size: 18px; }
   .venue { grid-column: 2 / -1; margin-top: 4px; text-align: center; font-size: 13px; color: var(--muted); }
   svg.shield { flex-shrink: 0; }
-  table { width: 100%; margin-top: 24px; border-collapse: collapse; font-size: 15px; }
-  th { text-align: right; font-size: 12px; font-weight: 600; color: var(--muted); padding: 8px 6px; border-bottom: 1px solid var(--line); }
-  td { text-align: right; padding: 10px 6px; border-bottom: 1px solid var(--line); }
-  th.club, td.club { text-align: left; }
-  td.club { display: flex; align-items: center; gap: 10px; font-weight: 600; }
-  td.pos { color: var(--muted); width: 32px; }
-  td.pts { font-weight: 700; }
-  tr.followed td { background: var(--surface); }
+  .standings { width: 100%; margin-top: 24px; border-collapse: collapse; table-layout: fixed; font-size: 15px; font-variant-numeric: tabular-nums; }
+  .standings th { text-align: right; font-size: 12px; font-weight: 600; color: var(--muted); padding: 8px 8px; border-bottom: 1px solid var(--line); white-space: nowrap; }
+  .standings td { text-align: right; padding: 10px 8px; border-bottom: 1px solid var(--line); white-space: nowrap; }
+  .standings th:not(.team-col), .standings td:not(.team-col) { width: 3.2em; }
+  .standings .pos { text-align: left; color: var(--muted); width: 2.4em; }
+  .standings .team-col { text-align: left; width: auto; }
+  .team-cell { display: flex; align-items: center; gap: 10px; min-width: 0; font-weight: 600; }
+  .team-cell span { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+  .standings .pts { font-weight: 700; }
+  .standings tr.followed td { background: var(--surface); }
+  .standings tr.followed td:first-child { border-radius: 10px 0 0 10px; }
+  .standings tr.followed td:last-child { border-radius: 0 10px 10px 0; }
   .empty { margin-top: 28px; padding: 40px 20px; border: 1.5px dashed var(--dash); border-radius: 18px; text-align: center; color: var(--muted); }
   .empty b { display: block; margin-bottom: 6px; color: var(--ink); font-family: var(--display); font-size: 22px; font-weight: 650; }
   .stamp { margin-top: 20px; font-size: 13px; color: var(--muted); }
@@ -448,17 +452,20 @@
   }
   function renderTable(rows) {
     if (!rows.length) return fail('No table for this competition yet.');
-    var html = '', group = null;
-    rows.forEach(function (r) {
-      if (r.group !== group) {
+    var html = '', group;
+    rows.forEach(function (r, i) {
+      // Open a table for the first row too: league tables have no groups (null).
+      if (i === 0 || r.group !== group) {
         if (html) html += '</tbody></table>';
         html += (r.group ? '<p class="day">' + esc(r.group) + '</p>' : '') +
-          '<table><thead><tr><th class="club" colspan="2">Club</th><th>P</th><th class="hide-m">W</th><th class="hide-m">D</th><th class="hide-m">L</th><th>GD</th><th>Pts</th></tr></thead><tbody>';
+          '<table class="standings"><thead><tr><th class="pos" scope="col" title="Position">#</th><th class="team-col" scope="col">Club</th>' +
+          '<th scope="col" title="Played">P</th><th class="hide-m" scope="col" title="Won">W</th><th class="hide-m" scope="col" title="Drawn">D</th>' +
+          '<th class="hide-m" scope="col" title="Lost">L</th><th scope="col" title="Goal difference">GD</th><th scope="col" title="Points">Pts</th></tr></thead><tbody>';
         group = r.group;
       }
       var mine = codes().indexOf((r.club.code || '').toUpperCase()) >= 0;
       html += '<tr' + (mine ? ' class="followed"' : '') + '><td class="pos">' + (r.rank || '') + '</td>' +
-        '<td class="club">' + shield(r.club.color) + esc(r.club.name) + '</td><td>' + r.played + '</td>' +
+        '<td class="team-col"><span class="team-cell">' + shield(r.club.color) + '<span>' + esc(r.club.name) + '</span></span></td><td>' + r.played + '</td>' +
         '<td class="hide-m">' + r.won + '</td><td class="hide-m">' + r.drawn + '</td><td class="hide-m">' + r.lost + '</td>' +
         '<td>' + (r.gd > 0 ? '+' : '') + r.gd + '</td><td class="pts">' + r.points + '</td></tr>';
     });
