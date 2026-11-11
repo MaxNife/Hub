@@ -21,3 +21,9 @@ Thumbs.db
 # Service apps keep their own data next to them
 apps/*/data/
 __pycache__/
+
+# Private notes and instructions (kept locally, not in the repo)
+/AGENTS.md
+/CLAUDE.md
+/memory.md
+/instructions/

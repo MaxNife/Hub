@@ -4,9 +4,7 @@ Technical notes for working on Hub. For what Hub is and how to set it up
 as a user, see `README.md`.
 
 Personal app store: one Go binary + React frontend + SQLite. Drop a folder
-with a `hub.json` into `apps/` and it shows up. See
-`instructions/Hub — System Design.md` and the mockups in
-`instructions/mockups/`.
+with a `hub.json` into `apps/` and it shows up.
 
 ## Layout
 
@@ -108,4 +106,4 @@ cd web; npm.cmd run lint; npx tsc -b
 
 M0 skeleton → M1 registry + static app → M2 shell → M3 home + launcher →
 M4 service apps → M5 status strip → M6 auth → M7 transcribe. All built (Transcribe
-was later removed); see System Design § Build plan.
+was later removed).

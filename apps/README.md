@@ -1,7 +1,7 @@
 # Apps
 
 Each app is a folder with `hub.json` + an icon. Hub never imports app code;
-it only reads the manifest (see System Design § The app contract).
+it only reads the manifest (`internal/registry/` checks its fields).
 
 | App | Type | Notes |
 | --- | --- | --- |
