@@ -18,13 +18,6 @@ import { useShell, reducedMotion } from '../shell-context';
 import { stagger } from '../motion';
 import { eventText, tempText, useStatus } from '../status';
 
-function greeting(date: Date) {
-  const h = date.getHours();
-  if (h < 12) return 'Good morning';
-  if (h < 18) return 'Good afternoon';
-  return 'Good evening';
-}
-
 // Re-renders on each minute boundary so the clock and live minute stay true.
 function useNow(): Date {
   const [now, setNow] = useState(() => new Date());
@@ -432,7 +425,6 @@ export function Home() {
           )}
         </div>
       </div>
-      <h1 className="home-title">{greeting(now)}, Hope</h1>
       <HomeSearch />
 
       <section className="today" aria-label="Today">

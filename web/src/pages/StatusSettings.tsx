@@ -8,7 +8,7 @@ import { useApps } from '../live';
 import { eventText, tempText, useHubSettings, useStatus, type Place, type WeatherSettings } from '../status';
 import { useShell } from '../shell-context';
 
-// What the line above the greeting shows: weather, next event, app health.
+// What the status line at the top of Home shows: weather, next event, app health.
 export function StatusSettings() {
   const qc = useQueryClient();
   const { toast } = useShell();
@@ -72,7 +72,7 @@ export function StatusSettings() {
     <div className="form-page">
       <Link to="/settings" className="back-link"><IconChevronLeft size={16} />Settings</Link>
       <div className="form-title"><h1>Weather and calendar</h1></div>
-      <p className="form-lead">What the line above your greeting shows. Hub refreshes these on its own, so Home never waits.</p>
+      <p className="form-lead">What the status line at the top of Home shows. Hub refreshes these on its own, so Home never waits.</p>
 
       <section className="form-section" aria-labelledby="weather-h">
         <h2 id="weather-h">Weather</h2>

@@ -202,10 +202,6 @@ kbd {
 .dot { width: 7px; height: 7px; border-radius: 999px; background: var(--live); flex-shrink: 0; }
 .dot.warn { background: var(--warn); }
 .dot.bad { background: var(--bad); }
-.home-title {
-  margin: 24px 0 0; font-family: var(--font-display); font-weight: 700;
-  font-size: clamp(56px, 7.2vw, 104px); letter-spacing: -0.045em; line-height: 0.92;
-}
 
 .home-search { position: relative; margin-top: 28px; z-index: 5; }
 .search-field {
@@ -627,7 +623,6 @@ button.link-row { width: 100%; border: none; border-top: 1px solid var(--line); 
   .page { gap: 24px; }
 
   .home-status { font-size: 13px; }
-  .home-title { margin-top: 10px; font-size: 50px; line-height: 0.95; }
   .home-search { margin-top: 18px; }
   .search-field { height: 52px; gap: 12px; padding: 0 16px; border-radius: 16px; box-shadow: 0 1px 0 rgba(255, 255, 255, 0.8) inset, 0 10px 22px rgba(70, 50, 20, 0.08); }
   .search-field svg { width: 20px; height: 20px; }
