@@ -23,7 +23,7 @@ ESPN, Open-Meteo and Hugging Face were blocked there, so live football data, rea
 
 ## How to run
 
-- Backend: `go run ./cmd/hub` (needs `web/dist`: `cd web; npm.cmd run build`). Frontend dev: `cd web; npm.cmd run dev`. Build: `.\build.ps1`. Tests: see README.
+- Backend: `go run ./cmd/hub` (needs `web/dist`: `cd web; npm.cmd run build`). Frontend dev: `cd web; npm.cmd run dev`. Build: `.\build.ps1`. Tests: see DEVELOPING.md.
 - Service apps: `python apps/football/server.py`, `python apps/documents/server.py`.
 - Go toolchain: system Go at `C:\Program Files\Go\bin\go.exe`; `.tools/` holds only `GO_LOCATION.md` — **do not re-download a local toolchain**.
 

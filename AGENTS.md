@@ -1,6 +1,7 @@
 # Hub — notes for coding agents
 
-Project overview and run instructions: `README.md`. Build progress and
+What Hub is and how users set it up: `README.md`. Layout, running,
+configuration, tests and build: `DEVELOPING.md`. Build progress and
 environment gotchas: `memory.md`.
 
 ## Apps, games and widgets

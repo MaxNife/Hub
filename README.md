@@ -1,108 +1,188 @@
 # Hub
 
-Personal app store: one Go binary + React frontend + SQLite. Drop a folder
-with a `hub.json` into `apps/` and it shows up. See
-`instructions/Hub — System Design.md` and the mockups in
-`instructions/mockups/`.
+**Your own little app store, running on your own computer.**
 
-## Layout
+Hub puts your everyday tools and games in one place. Open it in your
+browser and you get a home screen with today's football, tonight's dinner
+idea, your favourite apps, and a search box that opens anything in a
+keystroke. It runs on your computer, so your files and settings stay with
+you.
 
-- `cmd/hub/` — binary entrypoint (`hub`, `hub hash-password`)
-- `internal/config/` — env vars
-- `internal/store/` — SQLite, migrations, retention, backups
-- `internal/registry/` — scan `apps/`, validate `hub.json`
-- `internal/serve/`, `internal/proxy/` — static apps and service-app reverse proxy
-- `internal/health/` — 30 s health checks for service apps
-- `internal/integrations/` — weather (Open-Meteo) and calendar (ICS) providers
-- `internal/auth/` — password, sessions, CSRF header, login throttling
-- `internal/api/` — JSON handlers
-- `internal/spa/`, `internal/logging/`, `internal/maint/` — shell serving, logs, daily housekeeping
-- `web/` — React + TS frontend (embedded in the binary)
-- `apps/` — the apps: Converter, Meal picker, Memory, Reaction, Puzzle,
-  Random, Name generator (static); Football, Documents (service)
-- `appkit/` — theme snippet, the app kit (home header, settings sheet,
-  storage) every app uses, and the game kit games add on top
-- `data/` — `hub.db`, logs, backups (git-ignored)
+---
 
-## Prerequisites
+## About this app
 
-- Go 1.25+ and Node 20+
-- Python 3.10+ for the service apps (Football needs nothing else;
-  Documents needs `pip install -r apps/documents/requirements.txt`, plus
-  LibreOffice for Word/Excel/PowerPoint → PDF)
+### What you get
 
-> Windows note: Smart App Control in enforced mode blocks the freshly built
-> unsigned `hub.exe`. During development run the server with
-> `go run ./cmd/hub`; allow-list the release binary before running it as a
-> service.
+- **A home screen for your day.** The date, time, weather and your next
+  calendar event at the top. Below that, today's matches for the clubs you
+  follow, a dinner suggestion you can reroll, and a game to jump back into.
+- **Search that opens anything.** Press `/` and type an app's name to open
+  it.
+- **All your apps in one place.** Browse by category, pin your
+  favourites, and see what you opened recently.
+- **Light and dark mode.** Switch with the moon button at the bottom of
+  the sidebar.
+- **Use it from your phone.** Set a password and reach Hub from your phone
+  over a private connection (see *Use Hub on your phone* below).
 
-## Dev
+### Apps included
 
-```powershell
-# frontend (Vite proxies /api + /apps/ to Go on :8080)
-cd web; npm.cmd install; npm.cmd run dev
+| App | What it does |
+| --- | --- |
+| **Football** | Live scores, results, fixtures and league tables for the clubs you follow |
+| **Documents** | Merge, convert, edit and sign PDFs |
+| **Converter** | Units and currencies |
+| **Meal picker** | Tonight's dinner, decided |
+| **Random** | Dice, coins, numbers, and picking from a list |
+| **Name generator** | Project names on demand |
+| **Memory** | Match the pairs |
+| **Reaction** | Test your reflexes |
+| **Puzzle** | Sliding tiles |
 
-# backend (needs web/dist once: npm.cmd run build)
-go run ./cmd/hub
-# open http://127.0.0.1:8080
+Every app opens on its own home screen and has its own settings (the gear
+button in the top corner).
 
-# service apps, each in its own terminal (or NSSM / systemd in production)
-python apps/football/server.py      # :8101
-python apps/documents/server.py     # :8103
-```
+### Your files stay yours
 
-Hub checks service apps every 30 seconds; a stopped one gets a red dot and
-an offline screen, and recovers on its own (or with Retry) once it's back.
+Hub keeps your files on your device. When Documents works on a PDF it does
+the job in memory and keeps nothing on the server. Your recent files and
+drafts are saved in your own browser.
 
-## Configuration
+### Good to know
 
-| Setting | Env var | Default |
+- **Internet:** football scores, weather and currency rates need it.
+  Everything else works offline.
+- **Works on:** Windows, macOS and Linux, in any modern browser.
+- **Cost:** free. No account and no ads.
+
+---
+
+## Set up Hub
+
+This takes about 15 minutes the first time. After that, starting Hub is
+one command.
+
+### 1. Install what Hub needs
+
+Download and install these three free tools. Accept the default options in
+each installer.
+
+| Tool | Why | Get it |
 | --- | --- | --- |
-| Listen address | `HUB_ADDR` | `127.0.0.1:8080` |
-| Apps folder | `HUB_APPS_DIR` | `./apps` |
-| Data folder | `HUB_DATA_DIR` | `./data` |
-| Password hash | `HUB_PASSWORD_HASH` | none; required if not on localhost |
-| Calendar ICS link | `HUB_CALENDAR_ICS` | none; the status line hides the event |
-| TLS certificate + key | `HUB_TLS_CERT`, `HUB_TLS_KEY` | none |
-| Log level | `HUB_LOG_LEVEL` | `info` |
+| **Go** | Runs Hub itself | <https://go.dev/dl/> |
+| **Node.js** (LTS version) | Builds Hub's screens | <https://nodejs.org/> |
+| **Python** | Runs Football and Documents | <https://www.python.org/downloads/> (on Windows, tick **Add python.exe to PATH**) |
 
-Weather location and units are set in the app: Settings → Weather and calendar.
-Football's leagues and clubs: Settings → Football.
+Optional: install **LibreOffice** (<https://www.libreoffice.org/>) if you
+want Documents to turn Word, Excel or PowerPoint files into PDFs.
 
-## Sign-in and remote access
+### 2. Download Hub
 
-```powershell
-.\hub.exe hash-password            # type a password (8+ characters)
-$env:HUB_PASSWORD_HASH = '<hash>'  # single quotes: the hash contains $
+Either download the ZIP from <https://github.com/MaxNife/Hub> (green
+**Code** button → **Download ZIP**) and unzip it, or run:
+
+```
+git clone https://github.com/MaxNife/Hub.git
 ```
 
-With a hash set, Hub asks for the password and keeps you signed in for 30
-days. Hub refuses to listen beyond localhost without one. For your phone,
-prefer a private network over opening a port: for example
-`tailscale serve --bg 8080` keeps Hub on `127.0.0.1` and gives you HTTPS on
-your tailnet. To serve HTTPS directly instead, set `HUB_TLS_CERT` and
-`HUB_TLS_KEY`.
+### 3. Prepare it (first time only)
 
-## Tests
+Open a terminal in the Hub folder. On Windows, open the folder in File
+Explorer, right-click an empty space and choose **Open in Terminal**. Then
+run:
 
-```powershell
-go test ./...                                   # server packages
-python -m unittest apps/football/test_server.py
-python -m unittest discover apps/documents
-python appkit/sync.py --check    # apps carry the current app/game kit
-node e2e.cjs     # hub must be running on :8080 from the repo root, no password set
-cd web; npm.cmd run lint; npx tsc -b
+```
+cd web
+npm install
+npm run build
+cd ..
+pip install -r apps/documents/requirements.txt
 ```
 
-## Build
+### 4. Start Hub
 
-```powershell
-.\build.ps1      # frontend, then hub.exe with it embedded
-.\hub.exe
+Hub is made of three parts. Start each one in its own terminal window,
+from the Hub folder, and leave the windows open:
+
+```
+go run ./cmd/hub
+```
+```
+python apps/football/server.py
+```
+```
+python apps/documents/server.py
 ```
 
-## Milestones
+The first start takes a minute or two while Hub gets ready.
 
-M0 skeleton → M1 registry + static app → M2 shell → M3 home + launcher →
-M4 service apps → M5 status strip → M6 auth → M7 transcribe. All built (Transcribe
-was later removed); see System Design § Build plan.
+### 5. Open it
+
+Go to **<http://127.0.0.1:8080>** in your browser and bookmark it.
+
+To stop Hub, close the three terminal windows (or press `Ctrl+C` in each).
+
+---
+
+## Make it yours
+
+- **Weather:** Settings → *Weather and calendar*. Search for your town and
+  pick °C or °F.
+- **Football:** Settings → *Football*. Add your clubs and choose the
+  leagues you care about.
+- **Meal picker:** use *Edit list* on the dinner row to put in the meals
+  you actually cook.
+- **Favourites:** in *All apps*, press **Pin** on an app to keep it in
+  *Favorites* in the sidebar.
+- **Your calendar:** to show your next event at the top of Home, copy your
+  calendar's private **iCal / ICS link** (in Google Calendar: Settings →
+  your calendar → *Secret address in iCal format*). Then, before starting
+  Hub, run this in the same terminal:
+
+  ```
+  $env:HUB_CALENDAR_ICS = '<your link>'      # Windows PowerShell
+  export HUB_CALENDAR_ICS='<your link>'      # macOS / Linux
+  ```
+
+## Use Hub on your phone
+
+By default only the computer running Hub can open it. To use it from your
+phone:
+
+1. **Set a password.** In the Hub folder, run `go run ./cmd/hub hash-password`,
+   type a password (8 or more characters), and copy the long code it
+   prints. Before starting Hub, run
+   `$env:HUB_PASSWORD_HASH = '<code>'` (keep the single quotes).
+2. **Connect your phone privately.** The easiest way is
+   [Tailscale](https://tailscale.com/): install it on your computer and
+   phone, sign in to both, then run `tailscale serve --bg 8080` on the
+   computer. Tailscale shows you a private web address to open on your
+   phone.
+
+Hub asks for your password and then keeps you signed in for 30 days.
+
+---
+
+## Help
+
+**The page won't open.** Check that the `go run ./cmd/hub` window is still
+open and shows no error, then reload <http://127.0.0.1:8080>.
+
+**Football or Documents says it's offline.** Its terminal window is closed
+or showed an error. Start it again. Hub notices within 30 seconds, or press
+**Retry**.
+
+**Windows says it blocked `hub.exe`.** Smart App Control blocks programs it
+doesn't recognise. Use `go run ./cmd/hub` as shown above instead of running
+`hub.exe` directly.
+
+**Documents can't convert Word or Excel files.** Install LibreOffice, then
+restart Documents.
+
+**Where is my data?** Hub's own settings and history are in the `data`
+folder inside Hub. Your documents stay in your browser.
+
+---
+
+*Working on Hub's code? See [DEVELOPING.md](DEVELOPING.md).*
