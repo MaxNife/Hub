@@ -20,10 +20,6 @@ export function AppIcon({ kind, size = 76 }: { kind: AppIconKind; size?: number 
       return (
         <svg viewBox="0 0 64 64" {...s}><defs><linearGradient id="gConv" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stopColor="#5A8DFF" /><stop offset="1" stopColor="#2146C9" /></linearGradient></defs><rect width="64" height="64" rx="16" fill="url(#gConv)" /><path d="M18 25h26m-7-7 7 7-7 7M46 39H20m7-7-7 7 7 7" fill="none" stroke="#fff" strokeWidth="4.5" strokeLinecap="round" strokeLinejoin="round" /></svg>
       );
-    case 'transcribe':
-      return (
-        <svg viewBox="0 0 64 64" {...s}><defs><linearGradient id="gTr" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stopColor="#274B7A" /><stop offset="1" stopColor="#0B1B33" /></linearGradient></defs><rect width="64" height="64" rx="16" fill="url(#gTr)" /><rect x="24" y="12" width="16" height="26" rx="8" fill="#fff" /><path d="M18 30a14 14 0 0 0 28 0M32 44v8" fill="none" stroke="#6FDBFF" strokeWidth="4" strokeLinecap="round" /></svg>
-      );
     case 'reaction':
       return (
         <svg viewBox="0 0 64 64" {...s}><defs><linearGradient id="gRx" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stopColor="#FFE066" /><stop offset="1" stopColor="#FF9A1F" /></linearGradient></defs><rect width="64" height="64" rx="16" fill="url(#gRx)" /><circle cx="32" cy="32" r="15" fill="#F0336A" /><circle cx="32" cy="32" r="9.5" fill="#fff" /><circle cx="32" cy="32" r="4.5" fill="#F0336A" /></svg>

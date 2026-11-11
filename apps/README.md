@@ -7,7 +7,6 @@ it only reads the manifest (see System Design § The app contract).
 | --- | --- | --- |
 | converter, meal-picker, memory, reaction, puzzle, random, names | static | Files in `dist/`, served by Hub |
 | football | service, :8101 | `python apps/football/server.py` — ESPN scoreboard feed, no key |
-| transcribe | service, :8102 | `pip install -r apps/transcribe/requirements.txt`, then `python apps/transcribe/server.py` |
 | documents | service, :8103 | `pip install -r apps/documents/requirements.txt`, then `python apps/documents/server.py`; Office → PDF also needs LibreOffice |
 
 New static apps: copy `appkit/theme-head.html` into `<head>` so they share
@@ -21,6 +20,4 @@ built with `appkit/app-kit.js` (games add `game-kit.js`). Widgets on Hub's
 Home only have settings. Edit the kit in `appkit/`, then run
 `python appkit/sync.py` to update each app's copy.
 
-Files stay on the user's device: Documents' server is stateless, and
-Transcribe deletes each recording once transcribed and each transcript
-once the browser has collected it.
+Files stay on the user's device: Documents' server is stateless.

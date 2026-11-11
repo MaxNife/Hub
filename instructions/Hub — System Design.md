@@ -120,7 +120,7 @@ Pick `static` whenever an app can run entirely in the browser; use `service` onl
 |  | Static app | Service app |
 | --- | --- | --- |
 | What it is | Built HTML/JS/CSS files | Its own HTTP server, any language |
-| Examples | Memory, Reaction, Puzzle, Converter, Meal picker, Random | Football, Transcribe, Documents |
+| Examples | Memory, Reaction, Puzzle, Converter, Meal picker, Random | Football, Documents |
 | Who serves it | Hub, from `apps/{id}/{entry}` | The app; Hub reverse-proxies to `upstream` |
 | Who starts it | Nobody, it's files | You (v1), via NSSM, Docker or a script |
 | Health | Always up if the files exist | Hub polls `health` every 30 s |
@@ -143,10 +143,9 @@ Pick `static` whenever an app can run entirely in the browser; use `service` onl
 | Random | Dice, coin, number, pick one; saved lists; history | Dice type, total, no repeats, vibrate, history |
 | Name generator | New names, starred | How many, a word to include, starting letter, copy format |
 | Football | Your clubs (live, last, next), matches, tables | Clubs, leagues, opening view, 12/24 h, stadiums |
-| Transcribe | Totals, drop zone, your transcripts with search | Language, download format, open when ready, notify, how long to keep transcripts |
 | Documents | Unsaved edits, recent files, your tools, all tools | Keep files, auto-download, compression, page size, signature |
 
-**Your files stay yours.** Files belong on the user's device, not the Hub machine. Documents' server is stateless (below). Transcribe has to hold a recording while it works, so it deletes the recording as soon as transcription ends (done or failed); the transcript waits only until the browser collects it into IndexedDB, then it is deleted too. Anything never collected is deleted after `TRANSCRIBE_KEEP_HOURS` (default a week), and stray files are swept hourly.
+**Your files stay yours.** Files belong on the user's device, not the Hub machine. Documents' server is stateless (below).
 
 **Games.** Memory, Reaction and Puzzle share a game kit (`appkit/game-kit.js`, built on the app kit and copied into each game by `appkit/sync.py`): a home screen with Continue, New game, difficulty and stats, and settings for sound effects, music, volume and game options. Each game saves the game in progress in its own keys (`memory:progress`, `reaction:round`, `puzzle:save`). Hub opens a game at `#continue` or `#new`: `/open/{id}#continue` passes the hash to the iframe, which is how Home's Resume button reopens a Memory game where it was left.
 
@@ -361,7 +360,7 @@ Eight milestones, each ending in something you can open and use. Every milestone
 
 The remaining games and tools (Reaction, Puzzle, Random, Names) can be added any time after M2, since they're just more static apps.
 
-**Status (Sep 2026):** M0–M7 are built, along with Reaction, Puzzle, Random, Names, Documents and the game kit. Football uses ESPN's public scoreboard feed (no key); Transcribe uses faster-whisper locally.
+**Status (Sep 2026):** M0–M7 are built, along with Reaction, Puzzle, Random, Names, Documents and the game kit. Football uses ESPN's public scoreboard feed (no key). Transcribe (M7) was removed in Nov 2026 to save memory.
 
 ## Later: widgets, quick actions, AI
 

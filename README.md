@@ -19,7 +19,7 @@ with a `hub.json` into `apps/` and it shows up. See
 - `internal/spa/`, `internal/logging/`, `internal/maint/` — shell serving, logs, daily housekeeping
 - `web/` — React + TS frontend (embedded in the binary)
 - `apps/` — the apps: Converter, Meal picker, Memory, Reaction, Puzzle,
-  Random, Name generator (static); Football, Transcribe, Documents (service)
+  Random, Name generator (static); Football, Documents (service)
 - `appkit/` — theme snippet, the app kit (home header, settings sheet,
   storage) every app uses, and the game kit games add on top
 - `data/` — `hub.db`, logs, backups (git-ignored)
@@ -28,7 +28,6 @@ with a `hub.json` into `apps/` and it shows up. See
 
 - Go 1.25+ and Node 20+
 - Python 3.10+ for the service apps (Football needs nothing else;
-  Transcribe needs `pip install -r apps/transcribe/requirements.txt`;
   Documents needs `pip install -r apps/documents/requirements.txt`, plus
   LibreOffice for Word/Excel/PowerPoint → PDF)
 
@@ -49,7 +48,6 @@ go run ./cmd/hub
 
 # service apps, each in its own terminal (or NSSM / systemd in production)
 python apps/football/server.py      # :8101
-python apps/transcribe/server.py    # :8102
 python apps/documents/server.py     # :8103
 ```
 
@@ -89,7 +87,7 @@ your tailnet. To serve HTTPS directly instead, set `HUB_TLS_CERT` and
 
 ```powershell
 go test ./...                                   # server packages
-python -m unittest apps/football/test_server.py apps/transcribe/test_server.py
+python -m unittest apps/football/test_server.py
 python -m unittest discover apps/documents
 python appkit/sync.py --check    # apps carry the current app/game kit
 node e2e.cjs     # hub must be running on :8080 from the repo root, no password set
@@ -106,5 +104,5 @@ cd web; npm.cmd run lint; npx tsc -b
 ## Milestones
 
 M0 skeleton → M1 registry + static app → M2 shell → M3 home + launcher →
-M4 service apps → M5 status strip → M6 auth → M7 transcribe. All built; see
-System Design § Build plan.
+M4 service apps → M5 status strip → M6 auth → M7 transcribe. All built (Transcribe
+was later removed); see System Design § Build plan.
